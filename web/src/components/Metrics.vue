@@ -41,7 +41,6 @@ const metrics = computed(() => {
     // ETc = ET0 x Kc. Firmware mengirim nilainya di field et0 (nilai ETc sudah
     // dihitung di dalam), label di sini ETc supaya sama dengan LCD & proposal.
     { key: 'etc', label: 'ETc', value: fmtNum(row?.etc), unit: 'mm/hari', icon: 'M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z' },
-    { key: 'tds', label: 'TDS', value: fmtNum(row?.tds, 0), unit: 'ppm', icon: 'M9 3h6M10 3v6.5L4.6 18a2 2 0 0 0 1.7 3h11.4a2 2 0 0 0 1.7-3L14 9.5V3M7.5 15h9' },
   ];
 
   // Dua kartu air: anggaran harian (dari ETc) dan yang sudah dialirkan hari ini.
@@ -63,8 +62,8 @@ const metrics = computed(() => {
 </script>
 
 <template>
-  <!-- 6 metrik dasar + 2 kartu air (kalau ada) -> 2 kolom x 3 baris di >=900px.
-        2x3 juga menyeimbangkan tinggi dengan kartu Kontrol di sebelahnya.
+  <!-- 5 metrik dasar + 2 kartu air (kalau ada) -> 2 kolom di >=900px, dan
+        tetap menyeimbangkan tinggi dengan kartu Kontrol di sebelahnya.
         Sama seperti .home-top .metrics di style.css lama:319-321.
         Di 700-899px jadi 3 kolom, di bawah itu 2 kolom. -->
   <div class="grid grid-cols-2 gap-3.5 min-[700px]:grid-cols-3 min-[900px]:grid-cols-2 max-[420px]:gap-2">

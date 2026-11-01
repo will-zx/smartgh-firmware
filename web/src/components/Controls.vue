@@ -52,7 +52,7 @@ const items = computed(() => [
   { key: 'mist', label: 'Misting', on: a.value.mist, icon: [{ d: 'M4 15a7 7 0 1 1 11.7-7H17a4.5 4.5 0 0 1 2.5 8.2M8 16v1.5M12 16v2M16 16v1.5' }],
     tip: TIP('misting', 'Nyala = paksa nyala, mati = paksa mati') },
   { key: 'irigasi', label: 'Irigasi', on: a.value.irigasi, icon: [{ d: 'M7 3s3 5 3 7a3 3 0 0 1-6 0c0-2 3-7 3-7zM17 10s3 5 3 7a3 3 0 0 1-6 0c0-2 3-7 3-7z' }],
-    tip: TIP('irigasi', 'Nyala = paksa nyala, mati = paksa mati') + ' Paksa nyala menjalankan SATU siklus (FILL → FERT → DIST); paksa mati membatalkan siklus.' },
+    tip: TIP('irigasi', 'Nyala = paksa nyala, mati = paksa mati') + ' Paksa nyala menjalankan SATU siklus pompa DIST; paksa mati membatalkan siklus.' },
   { key: 'blower', label: 'Blower', on: a.value.blower, icon: spin(BLADE), duty: a.value.level,
     tip: TIP('blower', 'Nyala = paksa nyala, mati = paksa mati') + ' Duty di kanan = keluaran fuzzy yang berjalan.' },
 ]);
@@ -101,14 +101,6 @@ const ovOf = k => a.value.override[k] || 'auto';
       class="mb-3 rounded-lg border border-warn bg-warn-soft px-3 py-2 text-[11.5px] leading-snug text-warn"
     >
       <b>Siklus irigasi ditahan</b> — {{ ig.holdReason }}
-    </div>
-
-    <!-- Peringatan non-blocking: air tetap dialirkan, jangan sebut "ditahan". -->
-    <div
-      v-if="ig && ig.warning"
-      class="mb-3 rounded-lg border border-warn bg-warn-soft px-3 py-2 text-[11.5px] leading-snug text-warn"
-    >
-      <b>Peringatan irigasi</b> — {{ ig.warning }}
     </div>
 
     <!-- Telemetri irigasi: dosis dari ETc, durasi pompa, jeda minimum, dan

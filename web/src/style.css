@@ -58,7 +58,7 @@
   .pill-on {
     @apply bg-accent-soft text-accent-dark;
   }
-  /* Gangguan sensor (SOILERR/TDSERR) vs jam belum sinkron (NOSYNC).
+  /* Gangguan sensor (SOILERR) vs jam belum sinkron (NOSYNC).
      Keduanya beda dari "gagal baca" (offline, merah di topbar) dan dari
      "data lama" (krem di topbar). */
   .pill-err {

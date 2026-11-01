@@ -76,7 +76,7 @@ export const state = reactive({
 
 // ---------------------------------------------------------------- format ---
 // Angka sensor dibaca ADC 12-bit lalu jadi float: 1.421642 kPa / 5.4894 mm tidak
-// pernah berarti apa-apa bagi pengguna. 2 desimal cukup, TANAH/TDS dibulatkan
+// pernah berarti apa-apa bagi pengguna. 2 desimal cukup, TANAH dibulatkan
 // karena hanya dipakai sebagai persentase/ppm bulat.
 export const fmtNum = (v, d = 2) => (typeof v === 'number' && isFinite(v)) ? v.toFixed(d) : '-';
 
@@ -125,7 +125,7 @@ export function humanAge(sec) {
 // ------------------------------------------------------------ normalisasi ---
 // Kontrak data firmware (lihat firmware/src/firebase_db.cpp):
 //   ts (epoch, HANYA bila NTP sinkron), time_synced (bool), temperature,
-//   humidity, soil, vpd, etc (nilai ETc, dikirim juga sebagai et0), tds,
+//   humidity, soil, vpd, etc (nilai ETc, dikirim juga sebagai et0),
 //   blower_level, misting, irigasi, status_sistem, manual_mode,
 //   mist_ov / irig_ov / blower_ov, fase, vpd_target, fase_aktif,
 //   fase_durasi_s, fase_elapsed_s, fase_sisa_s, kc_aktif, tmean_c, device.
@@ -185,11 +185,11 @@ function overrideState(l, field, running) {
 export function normLog(l, key) {
   const src = l || {};
   // status_sistem mentah = label aksi + sufiks penanda, mis.
-  // "Misting + Blower ON TDSERR NOSYNC". Penanda tetap dibaca jadi flag (pill
+  // "Misting + Blower ON SOILERR NOSYNC". Penanda tetap dibaca jadi flag (pill
   // terpisah + ekspor CSV), tapi TIDAK ikut di label — kalau ikut, penanda
   // muncul dua kali dan kolom status jadi panjang.
   const statusRaw = typeof src.status_sistem === 'string' ? src.status_sistem : '';
-  const clean = statusRaw.replace(/\s*\b(SOILERR|TDSERR|NOSYNC|IRRIGOFF)\b/g, '').trim();
+  const clean = statusRaw.replace(/\s*\b(SOILERR|NOSYNC|IRRIGOFF)\b/g, '').trim();
   const status = clean || null;
   const hasTs = typeof src.ts === 'number' && src.ts >= 100000;
   // time_synced hanya ada di firmware baru; di firmware lama absen = dianggap
@@ -221,7 +221,6 @@ export function normLog(l, key) {
     soilN,
     vpd: numOrNull(src.vpd),
     etc,
-    tds: numOrNull(src.tds),
     blowerLevel: level,
     // Status aktuator SESUNGGUHNYA (yang sedang berjalan) — terpisah dari
     // override. Sakelar memakai override, operator perlu tahu yang berjalan.
@@ -235,7 +234,6 @@ export function normLog(l, key) {
     flags: {
       sensorError: /sensor error/i.test(statusRaw),
       soilErr: statusRaw.includes('SOILERR'),
-      tdsErr: statusRaw.includes('TDSERR'),
       noSync: statusRaw.includes('NOSYNC') || !synced,
       // IRRIGOFF = perangkat SENGAJA menonaktifkan irigasi otomatis (mis. debit
       // pompa & luas media belum dikalibrasi), BUKAN gangguan. Perintah
@@ -263,7 +261,6 @@ export function normLog(l, key) {
       usedMl: numOrNull(src.irigasi_terpakai_ml),
       intervalMin: numOrNull(src.irigasi_jeda_menit),
       holdReason: typeof src.irigasi_alasan_tahan === 'string' ? src.irigasi_alasan_tahan : '',
-      warning: typeof src.irigasi_peringatan === 'string' ? src.irigasi_peringatan : '',
     },
   };
   row.override = {
@@ -771,11 +768,11 @@ export function exportCsv() {
     return;
   }
   const head = ['waktu', 'suhu_C', 'kelembapan_pct', 'tanah_pct', 'vpd_kPa', 'etc_mm_hari',
-    'tds_ppm', 'status', 'manual_mode', 'fase', 'vpd_target_kPa', 'fase_aktif',
+    'status', 'manual_mode', 'fase', 'vpd_target_kPa', 'fase_aktif',
     'durasi_s', 'elapsed_s', 'sisa_s', 'device'];
   const body = rows.map(r => [
     r.ts ? new Date(r.ts * 1000).toISOString() : '',
-    r.temperature, r.humidity, r.soil, r.vpd, r.etc, r.tds,
+    r.temperature, r.humidity, r.soil, r.vpd, r.etc,
     r.statusRaw, r.manual ? 'YA' : 'TIDAK',
     r.phase.name, r.phase.target, r.phase.active ? 'YA' : 'TIDAK',
     r.phase.duration, r.phase.elapsed, r.phase.remaining, r.device,

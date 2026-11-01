@@ -22,8 +22,8 @@ satu skema warna (Material Blue berpusat di `#1565C0`) yang didefinisikan
 sebagai token Tailwind di `web/src/style.css`; hijau dan merah diambil dari
 warna ON/OFF aktuator, dan grafik membaca variabel warna yang sama.
 
-**Beranda** menampilkan enam metrik dasar (suhu, kelembapan, kandungan air
-tanah, VPD, ETc, dan TDS) dalam dua kolom × tiga baris, ditambah dua kartu air —
+**Beranda** menampilkan lima metrik dasar (suhu, kelembapan, kandungan air
+tanah, VPD, dan ETc) dalam dua kolom, ditambah dua kartu air —
 **Dosis harian** (dengan sisa anggaran hari ini) dan **Air terpakai** — yang
 hanya muncul bila perangkat mengirim field irigasi. Kartu **Tanah** memuat satu
 angka saja, yaitu rata-rata probe yang dipakai fuzzy, plus status probe
@@ -79,16 +79,16 @@ manual atau mengelola greenhouse, klik avatar **Tamu** → **Login**.
 | Admin | akun admin terdaftar | + sakelar kontrol aktuator & ganti nama greenhouse |
 | Perangkat | satu akun per ESP32 | push sensor, terima perintah |
 
-Status gangguan perangkat tampil sebagai badge di tabel log: `SOILERR` dan
-`TDSERR` (sensor tidak terbaca), `NOSYNC` (jam perangkat belum sinkron), dan
+Status gangguan perangkat tampil sebagai badge di tabel log: `SOILERR` (sensor
+tanah tidak terbaca), `NOSYNC` (jam perangkat belum sinkron), dan
 `IRRIGOFF` — irigasi otomatis dimatikan perangkat sampai debit pompa
 dikalibrasi, sementara perintah manual tetap jalan.
 
 Field `status_sistem` dari perangkat berisi label aksi plus penanda gangguan di
-ujungnya (`Misting + Blower ON TDSERR NOSYNC`). Dashboard memisahkan keduanya:
+ujungnya (`Misting + Blower ON SOILERR NOSYNC`). Dashboard memisahkan keduanya:
 kolom status menampilkan label bersihnya, dan tiap penanda jadi badge sendiri —
 tidak ada gangguan yang tercetak dua kali. Pencarian dan ekspor CSV tetap
-membaca string mentah, jadi mengetik `TDSERR` masih menemukan barisnya.
+membaca string mentah, jadi mengetik `SOILERR` masih menemukan barisnya.
 
 Cukup dua jenis akun: **admin** dan **ESP32**. Tulis (kontrol & label) dijaga
 RTDB rules lewat allowlist UID; pembacaan dibuka publik karena isinya hanya

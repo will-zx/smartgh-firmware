@@ -8,7 +8,7 @@ const setLimit = e => {
 };
 
 // Badge gangguan dibedakan dari "gagal baca" (offline) dan "data lama":
-//   - Sensor Error / SOILERR / TDSERR = sensor tidak terbaca (device hidup)
+//   - Sensor Error / SOILERR = sensor tidak terbaca (device hidup)
 //   - NOSYNC / tanpa ts = jam perangkat belum sinkron
 const errPill = 'pill pill-err';
 const warnPill = 'pill pill-warn';
@@ -60,18 +60,17 @@ const warnPill = 'pill pill-warn';
             <th class="whitespace-nowrap border-b-2 border-border bg-card-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[.4px] text-muted max-[420px]:px-2.5">Tanah (%)</th>
             <th class="whitespace-nowrap border-b-2 border-border bg-card-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[.4px] text-muted max-[420px]:px-2.5">VPD (kPa)</th>
             <th class="whitespace-nowrap border-b-2 border-border bg-card-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[.4px] text-muted max-[420px]:px-2.5">ETc (mm/hari)</th>
-            <th class="whitespace-nowrap border-b-2 border-border bg-card-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[.4px] text-muted max-[420px]:px-2.5">TDS (ppm)</th>
             <th class="whitespace-nowrap border-b-2 border-border bg-card-2 px-3.5 py-2.5 text-left text-[11px] font-semibold uppercase tracking-[.4px] text-muted max-[420px]:px-2.5">Status Sistem</th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="state.loadError">
-            <td colspan="8" class="px-3.5 py-6 text-center text-danger">
+            <td colspan="7" class="px-3.5 py-6 text-center text-danger">
               Gagal memuat data ({{ state.loadError }}) — coba Refresh
             </td>
           </tr>
           <tr v-else-if="!filteredLogs.length">
-            <td colspan="8" class="px-3.5 py-6 text-center text-muted">
+            <td colspan="7" class="px-3.5 py-6 text-center text-muted">
               {{ state.logFilter ? 'Tidak ada baris yang cocok' : 'Belum ada data' }}
             </td>
           </tr>
@@ -87,13 +86,11 @@ const warnPill = 'pill pill-warn';
               <td class="whitespace-nowrap border-b border-border px-3.5 py-2.5 font-semibold text-ink max-[420px]:px-2.5">{{ fmtNum(log.soil, 0) }}</td>
               <td class="whitespace-nowrap border-b border-border px-3.5 py-2.5 font-semibold text-ink max-[420px]:px-2.5">{{ fmtNum(log.vpd) }}</td>
               <td class="whitespace-nowrap border-b border-border px-3.5 py-2.5 font-semibold text-ink max-[420px]:px-2.5">{{ fmtNum(log.etc) }}</td>
-              <td class="whitespace-nowrap border-b border-border px-3.5 py-2.5 font-semibold text-ink max-[420px]:px-2.5">{{ fmtNum(log.tds, 0) }}</td>
               <td class="whitespace-nowrap border-b border-border px-3.5 py-2.5 max-[420px]:px-2.5">
                 <span :class="pillClass(log.status || '')">{{ log.status || '—' }}</span>
                 <!-- Gangguan sensor: dibedakan dari "gagal baca" (offline) dan
                      dari "data lama" (umur). -->
                 <span v-if="log.flags.soilErr" :class="errPill">SOILERR</span>
-                <span v-if="log.flags.tdsErr" :class="errPill">TDSERR</span>
                 <span v-if="log.flags.noSync" :class="warnPill">NOSYNC</span>
                 <!-- IRRIGOFF = irigasi otomatis sengaja dimatikan perangkat, bukan
                      kegagalan sensor -> warna peringatan, bukan merah. -->
