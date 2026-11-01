@@ -3,14 +3,12 @@
 
 #include <Arduino.h>
 
-// Siklus fertigasi: IDLE -> FILL -> FERT -> SETTLE -> CHECK -> DIST -> IDLE.
-// Urutan ini dikunci: DIST tidak pernah mendahului CHECK, jadi larutan yang
-// belum diperiksa konsentrasinya tidak sampai ke tanaman.
+// Siklus irigasi: IDLE -> DIST -> IDLE. Satu pompa (DIST) menarik air langsung
+// dari penampungan utama; durasinya = dosis ETc, lalu berhenti sendiri.
 // Dipicu `trigger` (keputusan fuzzy ATAU override manual).
-enum IrrigPhase { IRRIG_IDLE, IRRIG_FILL, IRRIG_FERT, IRRIG_SETTLE,
-                  IRRIG_CHECK, IRRIG_DIST };
+enum IrrigPhase { IRRIG_IDLE, IRRIG_DIST };
 
-// Nama fase ("FILL", "CHECK", ...) untuk log serial dan status_sistem.
+// Nama fase ("IDLE", "DIST") untuk log serial dan status_sistem.
 const char* irrigationPhaseName();
 
 // Status irigasi untuk telemetri (dashboard) & log.
@@ -21,7 +19,6 @@ struct IrrigStatus {
     float         usedMl;          // volume yang sudah dialirkan hari ini (mL)
     unsigned long minIntervalMs;   // jeda minimum antar siklus (ms)
     const char*   holdReason;      // alasan permintaan ditahan ("" = tidak ditahan)
-    const char*   warningReason;   // peringatan non-blocking ("" = tidak ada)
 };
 
 // Kumpulkan sampel suhu untuk Tmean (rata-rata sliding 3 jam).
@@ -58,15 +55,7 @@ IrrigStatus irrigationStatus();
 // permintaan manual (sakelar harus dimatikan lalu dinyalakan lagi). Tanpa
 // batas ini, trigger manual yang tetap true akan membuat pompa menyala
 // terus-menerus.
-//
-// tdsPpm/tdsValid dipakai di fase CHECK. Dosis stok A/B berjalan selama
-// IRRIG_FERT_MS (lingkaran terbuka, menurut debit pompa terukur), jadi TDS
-// hanya MEMVERIFIKASI dugaan itu.
-// Kalau ppm TERBACA sah dan di luar TDS_MIN_PPM..TDS_MAX_PPM, DIST DITAHAN:
-// siklus dibatalkan, anggaran harian dikembalikan, holdReason diisi.
-// Kalau probe TIDAK terbaca (tdsValid=false), air tetap dialirkan dengan
-// peringatan - tanpa probe tanaman tidak akan pernah disiram.
-void irrigationUpdate(bool trigger, bool manual, float tdsPpm, bool tdsValid);
+void irrigationUpdate(bool trigger, bool manual);
 bool irrigationRunning();         // ada fase aktif (dipakai status_sistem)
 void irrigationAbort();           // sensor tidak valid / darurat -> pompa mati
 

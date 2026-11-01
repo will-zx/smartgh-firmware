@@ -37,14 +37,13 @@ static HTTPClient http;
 //   et0              mm/hari ALIAS LAMA dari "etc" (deprecated, hapus nanti)
 //   tmean_c          °C      Tmean sliding 3 jam yang dipakai menghitung ETc
 //   kc_aktif         -       Kc fase berjalan (Tabel 2.1 proposal)
-//   tds              ppm     TDS larutan (TELEMETRI SAJA, bukan alat dosis)
 //   blower_level     0..1    duty blower yang dijalankan (PWM 1 kHz)
 //   misting          bool    pompa misting hidup
 //   irigasi          bool    siklus irigasi berjalan
 //   status_sistem    string  aksi yang berjalan ("Misting ON", "Misting +
 //                            Blower ON", "Irigasi ON") atau kata kondisi
 //                            (Normal/Monitor/Warning/Kritis/Sensor Error),
-//                            ditambah penanda SOILERR/TDSERR/NOSYNC/IRIGOFF
+//                            ditambah penanda SOILERR/NOSYNC/IRIGOFF
 //   manual_mode      bool    ada aktuator yang di-override manual
 //   mist_ov          string  override misting: "auto" | "manual" | "forced"
 //   irig_ov          string  override irigasi: "auto" | "manual" | "forced"
@@ -242,7 +241,7 @@ static const char* ovName(int8_t ov) {
 
 bool pushSensorLog(float temperature, float humidity, float soil, float soil2, float soil3,
                    uint8_t soilOk, uint8_t soilCount,
-                   float vpd, float etc, float tds,
+                   float vpd, float etc,
                    float blowerLevel, bool misting, bool irigasi,
                    const char* statusSistem, bool manualMode, const PhaseState& phase,
                    const OverrideState& ov, float tmean, const IrrigStatus& irig,
@@ -268,7 +267,6 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
     // hapus "et0" setelah sesi web memakai "etc".
     putNum(doc, "etc", etc);
     putNum(doc, "et0", etc);
-    putNum(doc, "tds", tds);
     // Keluaran fuzzy = perintah aktuator yang dijalankan. Dashboard memakai
     // angka ini, bukan menguraikan string status_sistem.
     putNum(doc, "blower_level", blowerLevel);
@@ -302,7 +300,6 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
     // String kosong = tidak ada yang ditahan. Dashboard menampilkannya
     // supaya operator tahu kenapa air tidak keluar.
     doc["irigasi_alasan_tahan"] = irig.holdReason ? irig.holdReason : "";
-    doc["irigasi_peringatan"] = irig.warningReason ? irig.warningReason : "";
     doc["time_synced"] = timeOk;
     if (timeOk) doc["ts"] = ts;
     doc["device"] = DEVICE_ID;
@@ -403,7 +400,7 @@ void pollCommands() {
     } else if (strcmp(action, "irigasi") == 0) {
         applyActuator(C_IRIG, mode, on);
         // Mode "off" harus benar-benar menghentikan pompa: tanpa abort, state
-        // machine (FILL/FERT/DIST) terus memutar pompa walau sakelar OFF.
+        // machine DIST terus memutar pompa walau sakelar OFF.
         if (mode == 0) irrigationAbort();
     } else if (strcmp(action, "blower") == 0) {
         applyActuator(C_BLOWER, mode, on);

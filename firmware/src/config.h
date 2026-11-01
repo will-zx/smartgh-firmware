@@ -24,9 +24,9 @@
 
 // Tiga probe soil (kapasitif) supaya satu zona terwakili beberapa titik tanam.
 // WAJIB di ADC1: selama WiFi aktif, ADC2 (GPIO 0,2,4,12-15,25-27) tidak bisa
-// dipakai. Pemakaian ADC1 sekarang: 34/33/39 = soil, 35 = TDS, 32 = PUMP_DIST.
-// 36 (VP) sengaja dikosongkan sebagai cadangan. 36/39 input-only tanpa
-// pull-up - aman untuk keluaran analog modul ini.
+// dipakai. Pemakaian ADC1 sekarang: 34/33/39 = soil, 32 = PUMP_DIST (digital).
+// GPIO 35 dan 36 bebas. 34/39 input-only tanpa pull-up - aman untuk keluaran
+// analog modul ini.
 #define SOIL_COUNT      3
 #define SOIL_PINS       {34, 33, 39}
 
@@ -50,45 +50,20 @@
 #define BLOWER_MIN_DUTY 0.20f
 #define MOSFET_INVERTED 0
 
-// Pompa irigasi. Prototipe sekarang memakai SATU pompa: DIST (12V) menarik
-// air langsung dari penampungan utama ke zona tanam.
-// Fertigasi aktif kembali: FILL mengisi ember campuran, FERT menyalakan pompa
-// stok A dan B, DIST mengalirkan larutan yang sudah diperiksa ke tanaman.
-// Semua via modul XY-MOS/MOSFET (hormati MOSFET_INVERTED).
-#define PUMP_FILL          13   // 12V: penampungan utama -> ember campuran
-#define PUMP_FERT_A        14   // 5V : pupuk A -> ember
-#define PUMP_FERT_B        15   // 5V : pupuk B -> ember
-#define PUMP_DIST          32   // 12V: ember campuran -> tanaman
+// Pompa irigasi. Satu pompa: DIST (12 V) menarik air langsung dari penampungan
+// utama ke zona tanam — tidak ada pompa pengisian ember atau dosing pupuk.
+// Via modul XY-MOS/MOSFET (hormati MOSFET_INVERTED).
+#define PUMP_DIST          32   // 12V: penampungan utama -> tanaman
 
-// ==== Durasi tiap fase fertigasi ====
-// SEMUA ANGKA DI BAWAH INI BELUM DIUKUR. Masih perkiraan dan ditandai TODO
-// supaya tidak tertukar dengan nilai hasil kalibrasi di atas.
-// Cara ukur:
-//  1) IRRIG_FILL_MS  = volume ember (mL) / debit FILL (31,7 mL/s) x 1000.
-//  2) IRRIG_FERT_MS  = dosis yang diminta resep AB Mix / debit FERT (22,2 mL/s).
-//  3) IRRIG_SETTLE_MS = jeda sampai pembacaan TDS berhenti bergerak.
-// Isi 4,5 L dari ember 5 L: sisakan headroom untuk sisa air/debit pompa yang
-// lebih tinggi. Ini bukan pengganti float switch; pasang cutoff overflow untuk
-// perlindungan penuh. (4500 mL / 31,7 mL/s x 1000)
-#define IRRIG_FILL_MS      141955
-#define IRRIG_FERT_MS      1126    // 25 mL stok / 22,2 mL/s x 1000 = ~1,1 detik (TODO: sesuaikan via fase CHECK sampai TDS 800-1000 ppm)
-#define IRRIG_SETTLE_MS    30000   // TODO: ukur lapangan - jeda sampai pembacaan TDS berhenti bergerak
-// Jeda singkat di fase CHECK supaya pembacaan TDS stabil sebelum dinilai.
-// SETTLE sudah memberi 30 detik tanpa pompa, jadi ini hanya jeda tambahan
-// satu putaran loop controlTask (2 detik).
-#define IRRIG_CHECK_MS      2000
-// Batas waktu mutlak tiap fase supaya tidak ada pompa yang berjalan tanpa henti
-// bila sensor atau waktunya nyangkut.
+// Batas waktu mutlak fase DIST supaya pompa tidak berjalan tanpa henti bila
+// sensor atau waktunya nyangkut.
 #define IRRIG_PHASE_TIMEOUT_MS 180000UL
 
 // ==== Kalibrasi dosis irigasi (TERUKUR 21 Okt 2026) ====
-// Debit pompa: gelas ukur + stopwatch, 3x, rata-rata.
-//   pompa DIST (dan FILL) = 31,7 mL/s ; pompa FERT = 22,2 mL/s (tidak dipakai
-//   lagi selama fertigasi ditunda, dicatat untuk mengaktifkan kembali).
+// Debit pompa DIST: gelas ukur + stopwatch, 3x, rata-rata = 31,7 mL/s.
 // Cara ukur ulang: letakkan gelas ukur di outlet pompa, nyalakan pompa,
 // catat volume setelah 30 s, ulangi 3x, ambil rata-rata -> mL/detik.
 #define PUMP_DIST_ML_PER_S   31.7f
-#define PUMP_FERT_ML_PER_S   22.2f
 // Luas wetted zona: 10 polybag 30x30 cm, 2 baris -> 900 cm2 per tanaman
 // (asumsi: permukaan atas polibag = area wetted), total 9000 cm2.
 // Cara ukur ulang: hitung luas dasar tiap polybag (pi * d^2 / 4 dengan d =
@@ -229,43 +204,6 @@ static const float SUN_P_MONTH[12] = {
 // 33 mengikuti nilai 34), naikkan ini; kelipatan 10 ms murah di loop 2 s.
 #define SOIL_SETTLE_MS 10
 
-// TDS Meter v1.0 (analog, klon DFRobot SEN0244) di ember campuran irigasi.
-// Output ~0..2.3V. GPIO35 = ADC input-only tanpa pull-up. Kompensasi suhu
-// memakai suhu SHT31. Kalibrasi: TDS_CAL_K (set dengan larutan standar).
-// CATATAN: TDS dipakai sebagai PEMERIKSA setelah larutan homogen, bukan
-// pengendali dosis. Dosis stok A/B berjalan selama IRRIG_FERT_MS (lingkaran
-// terbuka) menurut debit pompa yang sudah terukur, sehingga konsentrasi
-// diharapkan jatuh di dalam rentang. TDS memverifikasi dugaan itu.
-//
-// PERILAKU SAAT DI LUAR RENTANG: kalau TDS TERBACA sah dan di luar rentang,
-// DIST DITAHAN (siklus dibatalkan, anggaran harian dikembalikan) karena kimia
-// larutannya jelas salah. Kalau probe TIDAK terbaca (tdsValid=false), air
-// tetap dialirkan dengan peringatan - tanpa probe tanaman tidak akan pernah
-// disiram. Lihat fase IRRIG_CHECK di irrigation.cpp.
-#define TDS_PIN         35
-#define TDS_ADC_MAX     4095.0
-#define TDS_REF_VOLT    3.3
-#define TDS_TARGET_PPM  1000.0  // konsentrasi larutan akhir (air penampungan ~400 ppm)
-#define TDS_CAL_K       1.0
-// Rentang penerimaan larutan sebelum distribusi.
-// TODO: perkiraan belaka. Tetapkan dari resep AB Mix yang benar-benar dipakai:
-//   ppm_target = dosis stok (mL) / volume ember (mL) x konsentrasi stok (ppm)
-// Lalu ukur dengan larutan standar dan sesuaikan TDS_CAL_K.
-#define TDS_MIN_PPM     800.0f
-#define TDS_MAX_PPM    1200.0f
-// Rentang raw ADC yang dianggap sah (probe terendam, bukan mengambang / dicabut)
-// dan rentang ppm. Di luar itu TDS ditandai tidak valid -> dosis pupuk tidak
-// dihitung dari angka garbage.
-#define TDS_RAW_MIN     200
-#define TDS_RAW_MAX     3000
-#define TDS_PPM_MIN     50.0f
-#define TDS_PPM_MAX     5000.0f
-// Ambang stabilitas antar 8 sampel TDS. Pin GPIO35 (ADC input-only, tanpa
-// pull-up/pull-down) melayang saat probe dicabut -> nilai tengah tak stabil
-// yang lolos cek rentang [TDS_RAW_MIN, TDS_RAW_MAX] dan menghasilkan PPM palsu.
-// Kalau spread terlalu besar, angka dianggap tidak andal -> valid = false.
-#define TDS_FLOAT_SPREAD 300.0f
-
 // Filter EMA (Exponential Moving Average): y[n] = alpha*x[n] + (1-alpha)*y[n-1].
 // alpha kecil = lebih halus tapi lebih lambat. Dipakai untuk suhu & kelembaban
 // (input VPD) serta soil, agar VPD dan keputusan irigasi tidak bergetar.
@@ -275,10 +213,6 @@ static const float SUN_P_MONTH[12] = {
 #define EMA_ALPHA_TEMP  0.2f
 #define EMA_ALPHA_HUM   0.2f
 #define EMA_ALPHA_SOIL  0.2f
-// TDS paling bising (pompa fert berdenyut 2 s on / 1 s off, jadi dua iterasi
-// berurutan bisa menangkap kondisi adukan berbeda). Difilter lebih cepat dari
-// suhu/kelembapan supaya gate target TDS tidak bereaksi pada satu sampel.
-#define EMA_ALPHA_TDS   0.3f
 
 // Kontrol VPD berbasis setpoint fase (di-set admin dari dashboard). Setpoint
 // ini KOREKSI terhadap keluaran fuzzy, bukan pengganti: fuzzy tetap menentukan

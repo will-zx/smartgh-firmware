@@ -16,7 +16,7 @@
 // saat semuanya mati).
 bool pushSensorLog(float temperature, float humidity, float soil, float soil2, float soil3,
                    uint8_t soilOk, uint8_t soilCount,
-                   float vpd, float etc, float tds,
+                   float vpd, float etc,
                    float blowerLevel, bool misting, bool irigasi,
                    const char* statusSistem, bool manualMode, const PhaseState& phase,
                    const OverrideState& ov, float tmean, const IrrigStatus& irig,

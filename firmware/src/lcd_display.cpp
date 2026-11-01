@@ -40,18 +40,17 @@ void initLcd() {
 
 // Baris 0-2 saja. Baris 4 ditulis task scroll (lcdScrollTask).
 void updateLcd(float temp, float humidity, float soilMoisture, float vpd,
-               float etc, float tds) {
+               float etc) {
     char l0[24], l1[24], l2[24];
-    char t[12], h[12], s[12], v[12], e[12], d[12];
+    char t[12], h[12], s[12], v[12], e[12];
     fmtVal(t, sizeof(t), temp, 1, "C");
     fmtVal(h, sizeof(h), humidity, 1, "%");
     fmtVal(s, sizeof(s), soilMoisture, 1, "%");
     fmtVal(v, sizeof(v), vpd, 2, "");
     fmtVal(e, sizeof(e), etc, 1, "mm");
-    fmtVal(d, sizeof(d), tds, 0, "");
     snprintf(l0, sizeof(l0), "Suhu %s RH %s", t, h);
     snprintf(l1, sizeof(l1), "Soil %s VPD %s", s, v);
-    snprintf(l2, sizeof(l2), "ETc %s TDS %s", e, d);
+    snprintf(l2, sizeof(l2), "ETc %s", e);
     lcdLine(0, l0);
     lcdLine(1, l1);
     lcdLine(2, l2);

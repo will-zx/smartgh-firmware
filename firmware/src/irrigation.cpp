@@ -4,12 +4,10 @@
 #include <Preferences.h>
 #include <time.h>
 
-// ==== State machine fertigasi (empat pompa) ====
-// FILL mengisi ember campuran dari penampungan, FERT menyalakan pompa stok A
-// dan B selama durasi tetap, SETTLE mematikan semua pompa supaya larutan
-// homogen, CHECK menilai konsentrasi TDS, dan DIST mengalirkan larutan ke
-// tanaman. CHECK selalu didahulukan DIST, jadi larutan yang belum diperiksa
-// tidak pernah sampai ke tanaman.
+// ==== State machine irigasi (satu pompa) ====
+// DIST menarik air langsung dari penampungan utama ke zona tanam. Tidak ada
+// fase pengisian ember atau dosing pupuk: dosis dihitung dari ETc, pompa
+// menyala selama durasi dosis itu, lalu berhenti sendiri.
 static IrrigPhase phase = IRRIG_IDLE;
 static unsigned long phaseStart = 0;       // mulai fase DIST berjalan
 static unsigned long cycleDoseMs = 0;      // durasi pompa siklus yang berjalan
@@ -31,27 +29,12 @@ static unsigned long lastRejectMs = 0;
 // tahu kenapa air tidak keluar (bukan cuma "tidak merespons"). Kosong = tidak
 // ditahan.
 static char          holdReason[40] = "";
-// Peringatan yang TIDAK menahan air (mis. probe TDS tidak terbaca). Dipisah
-// dari holdReason supaya dashboard tidak menulis "siklus ditahan" saat DIST
-// tetap berjalan.
-static char          warningReason[40] = "";
 static Preferences   prefsIrig;
 static bool          budgetLoaded = false;
-
-// Siklus terakhir dibatalkan karena TDS di luar rentang. Alasan itu DIPERTAHANKAN
-// (tidak ditimpa "jeda minimum belum lewat" 2 detik kemudian) sampai siklus
-// berikutnya benar-benar mulai - operator perlu tahu bahwa dosisnya yang salah,
-// bukan sekadar jeda waktu.
-static bool          tdsBlocked = false;
 
 static void setHoldReason(const char* r) {
     strncpy(holdReason, r, sizeof(holdReason) - 1);
     holdReason[sizeof(holdReason) - 1] = '\0';
-}
-
-static void setWarningReason(const char* r) {
-    strncpy(warningReason, r, sizeof(warningReason) - 1);
-    warningReason[sizeof(warningReason) - 1] = '\0';
 }
 
 // Anggaran harian harus bertahan setelah reboot/brownout; kalau hanya di RAM,
@@ -209,28 +192,18 @@ IrrigStatus irrigationStatus() {
     st.doseMs = (phase == IRRIG_DIST) ? cycleDoseMs : irrigationDoseMs();
     st.doseMl = (phase == IRRIG_DIST) ? cycleDoseMl : irrigationDoseMl();
     st.holdReason = holdReason;
-    st.warningReason = warningReason;
     return st;
 }
 
-// Penggerak empat pompa, digabung dalam satu pemanggilan supaya tidak ada
-// keadaan separuh: bila satu pompa menyala, tiga lainnya pasti mati.
-static void setPumps(bool fill, bool fertA, bool fertB, bool dist) {
-    digitalWrite(PUMP_FILL,   (fill  ^ MOSFET_INVERTED) ? HIGH : LOW);
-    digitalWrite(PUMP_FERT_A, (fertA ^ MOSFET_INVERTED) ? HIGH : LOW);
-    digitalWrite(PUMP_FERT_B, (fertB ^ MOSFET_INVERTED) ? HIGH : LOW);
-    digitalWrite(PUMP_DIST,   (dist  ^ MOSFET_INVERTED) ? HIGH : LOW);
+// Pompa DIST: satu-satunya aktuator irigasi.
+static void setDist(bool on) {
+    digitalWrite(PUMP_DIST, (on ^ MOSFET_INVERTED) ? HIGH : LOW);
 }
-static void allPumpsOff() { setPumps(false, false, false, false); }
 
 const char* irrigationPhaseName() {
     switch (phase) {
-        case IRRIG_IDLE:   return "IDLE";
-        case IRRIG_FILL:   return "FILL";
-        case IRRIG_FERT:   return "FERT";
-        case IRRIG_SETTLE: return "SETTLE";
-        case IRRIG_CHECK:  return "CHECK";
-        case IRRIG_DIST:   return "DIST";
+        case IRRIG_IDLE: return "IDLE";
+        case IRRIG_DIST: return "DIST";
     }
     return "?";
 }
@@ -253,37 +226,23 @@ void irrigationAbort() {
     // Sensor tidak valid / darurat: pompa langsung dimatikan. Volume yang
     // sudah dialirkan TIDAK dikembalikan ke tracker (airnya sudah keluar).
     if (phase != IRRIG_IDLE) {
-        Serial.println("[irigasi] siklus dibatalkan (abort) - semua pompa dimatikan");
+        Serial.println("[irigasi] siklus dibatalkan (abort) - pompa dimatikan");
     }
-    allPumpsOff();
+    setDist(false);
     phase = IRRIG_IDLE;
 }
 
-// Ganti fase + catat waktunya + cetak ke serial. Log perpindahan fase ini yang
-// dipakai mengukur IRRIG_FILL_MS / IRRIG_FERT_MS / IRRIG_SETTLE_MS di lapangan.
-static void changePhase(IrrigPhase p) {
-    if (p == phase) return;
-    phase = p;
-    phaseStart = millis();
+// Mulai fase DIST: catat waktunya, nyalakan pompa, cetak ke serial.
+// `now` dioper dari pemanggil supaya pemeriksaan selesai di iterasi yang sama
+// tidak melihat selisih waktu negatif (unsigned wrap -> pompa langsung mati).
+static void startDist(unsigned long now) {
+    phase = IRRIG_DIST;
+    phaseStart = now;
+    setDist(true);
     Serial.printf("irigasi: fase %s\n", irrigationPhaseName());
 }
 
-// Masuk fase baru DAN langsung menyalakan pompa fase itu. Pompa dinyalakan di
-// sini, bukan di dalam switch, karena waktu diperiksa di awal iterasi: fase
-// yang lebih pendek dari periode controlTask (2000 ms, kasus FERT 1126 ms)
-// akan menyala lalu mati dalam iterasi yang sama kalau pompanya baru dinyalakan
-// setelah pemeriksaan - pompa tidak pernah benar-benar berputar.
-static void enterPhase(IrrigPhase p) {
-    changePhase(p);
-    switch (p) {
-        case IRRIG_FILL: setPumps(true,  false, false, false); break;
-        case IRRIG_FERT: setPumps(false, true,  true,  false); break;
-        case IRRIG_DIST: setPumps(false, false, false, true);  break;
-        default:         allPumpsOff(); break;   // SETTLE, CHECK, IDLE
-    }
-}
-
-void irrigationUpdate(bool trigger, bool manual, float tdsPpm, bool tdsValid) {
+void irrigationUpdate(bool trigger, bool manual) {
     unsigned long now = millis();
     budgetRollOver();
 
@@ -320,14 +279,11 @@ void irrigationUpdate(bool trigger, bool manual, float tdsPpm, bool tdsValid) {
                      "[irigasi] anggaran harian habis: %.0f/%.0f mL", usedMl, budget);
             logReject("budget", msg);
         } else if (intervalShort && !manualAllow) {
-            // Jangan timpa alasan TDS: itu yang harus dibaca operator.
-            if (!tdsBlocked) {
-                setHoldReason("jeda minimum belum lewat");
-                unsigned long sisa = irrigationMinIntervalMs() - (now - lastCycleStartMs);
-                snprintf(msg, sizeof(msg),
-                         "[irigasi] jeda minimum belum lewat: sisa %.0f menit", sisa / 60000.0f);
-                logReject("jeda", msg);
-            }
+            setHoldReason("jeda minimum belum lewat");
+            unsigned long sisa = irrigationMinIntervalMs() - (now - lastCycleStartMs);
+            snprintf(msg, sizeof(msg),
+                     "[irigasi] jeda minimum belum lewat: sisa %.0f menit", sisa / 60000.0f);
+            logReject("jeda", msg);
         } else {
             if (manualAllow && (budgetFull || intervalShort)) {
                 Serial.println("[irigasi] override manual: siklus jalan di luar "
@@ -335,8 +291,6 @@ void irrigationUpdate(bool trigger, bool manual, float tdsPpm, bool tdsValid) {
             }
             if (manualAllow) manualRequestUsed = true;
             setHoldReason("");
-            setWarningReason("");
-            tdsBlocked = false;                  // siklus baru: alasan TDS lama selesai
             cycleDoseMs = doseMs;
             cycleDoseMl = dose;
             lastCycleStartMs = now;
@@ -347,101 +301,20 @@ void irrigationUpdate(bool trigger, bool manual, float tdsPpm, bool tdsValid) {
                           "anggaran harian %.0f mL, terpakai %.0f mL\n",
                           dose, doseMs / 1000.0f,
                           irrigationMinIntervalMs() / 3600000.0f, budget, usedMl);
-            enterPhase(IRRIG_FILL);              // isi ember dulu, bukan langsung DIST
+            startDist(now);
         }
     }
 
-    switch (phase) {
-    // Pola tiap fase: pompa sudah dinyalakan oleh enterPhase() saat fase
-    // dimasuki, di sini hanya diperiksa kapan fase berakhir. Jangan menyalakan
-    // pompa di dalam case: fase yang lebih pendek dari periode controlTask
-    // (FERT 1126 ms vs 2000 ms) akan menyala lalu mati di iterasi yang sama.
-    // ---- FILL: penampungan -> ember campuran. Durasi masih perkiraan. ----
-    case IRRIG_FILL:
-        if (now - phaseStart >= IRRIG_FILL_MS ||
+    // ---- DIST: penampungan utama -> tanaman, berhenti pada dosis yang sudah
+    // dihitung. Pompa dinyalakan di startDist(), bukan di sini: fase yang lebih
+    // pendek dari periode controlTask akan menyala lalu mati di iterasi yang
+    // sama kalau pompanya baru dinyalakan setelah pemeriksaan.
+    if (phase == IRRIG_DIST) {
+        if (now - phaseStart >= cycleDoseMs ||
             now - phaseStart >= IRRIG_PHASE_TIMEOUT_MS) {
-            enterPhase(IRRIG_FERT);
-        }
-        break;
-
-    // ---- FERT: stok A dan B -> ember, durasi tetap (lingkaran terbuka). ----
-    // Resolusi waktu = periode controlTask 2 s, jadi dosis stok minimal satu
-    // iterasi (~2 s x 22,2 mL/s = ~44 mL) walau IRRIG_FERT_MS 1126 ms.
-    // Selisih ini yang dikejar lewat fase CHECK/TDS atau pengenceran stok.
-    case IRRIG_FERT:
-        if (now - phaseStart >= IRRIG_FERT_MS ||
-            now - phaseStart >= IRRIG_PHASE_TIMEOUT_MS) {
-            enterPhase(IRRIG_SETTLE);
-        }
-        break;
-
-    // ---- SETTLE: semua pompa mati, larutan homogen sebelum TDS dibaca. ----
-    case IRRIG_SETTLE:
-        if (now - phaseStart >= IRRIG_SETTLE_MS ||
-            now - phaseStart >= IRRIG_PHASE_TIMEOUT_MS) {
-            enterPhase(IRRIG_CHECK);
-        }
-        break;
-
-    // ---- CHECK: nilai TDS. Di luar rentang = distribusi DITAHAN. ----
-    // Dua kasus dibedakan sengaja:
-    //  - Larutan TERBACA dan jelas di luar rentang (kimia salah): DIST ditahan,
-    //    siklus dibatalkan, dan anggaran harian dikembalikan karena air tidak
-    //    pernah sampai ke tanaman.
-    //  - Probe TIDAK terbaca (tdsValid=false, mis. probe dicabut/tidak stabil):
-    //    BUKAN alasan menahan air. Tanpa probe, tanaman tidak akan pernah
-    //    disiram, jadi larutan tetap dialirkan dan hanya diberi peringatan.
-    case IRRIG_CHECK:
-        if (now - phaseStart >= IRRIG_CHECK_MS) {
-            char msg[160];
-            if (tdsValid && (tdsPpm < TDS_MIN_PPM || tdsPpm > TDS_MAX_PPM)) {
-                setHoldReason("TDS di luar rentang, distribusi ditahan");
-                setWarningReason("");
-                snprintf(msg, sizeof(msg),
-                         "[irigasi] TDS %.0f ppm di luar %.0f..%.0f ppm: distribusi "
-                         "DITAHAN, siklus dibatalkan (air di ember tidak dialirkan)",
-                         tdsPpm, TDS_MIN_PPM, TDS_MAX_PPM);
-                logReject("tds_hold", msg);
-                tdsBlocked = true;               // alasan ini dipertahankan sampai siklus berikutnya
-                // Air tidak jadi dialirkan -> anggaran harian dikembalikan.
-                usedMl -= cycleDoseMl;
-                if (usedMl < 0.0f) usedMl = 0.0f;
-                persistBudget();
-                cycleDoseMs = 0;
-                cycleDoseMl = 0.0f;
-                enterPhase(IRRIG_IDLE);
-                // Jeda minimum tetap berlaku supaya tidak terjadi lingkar
-                // FILL berulang tiap 2 s (ember terus diisi, tidak ada yang
-                // dialirkan). Operator bisa mencoba lagi kapan saja lewat
-                // sakelar manual (satu permintaan = satu siklus).
-                Serial.println("[irigasi] siklus dibatalkan (TDS). Perbaiki dosis, "
-                               "lalu nyalakan sakelar irigasi manual untuk mencoba lagi");
-                break;
-            }
-            if (!tdsValid) {
-                setWarningReason("TDS tidak terbaca (air tetap dialirkan)");
-                snprintf(msg, sizeof(msg),
-                         "[irigasi] TDS tidak terbaca: air tetap didistribusikan");
-                logReject("tds", msg);
-            } else {
-                setWarningReason("");
-                Serial.printf("irigasi: TDS %.0f ppm lolos (%.0f..%.0f ppm)\n",
-                              tdsPpm, TDS_MIN_PPM, TDS_MAX_PPM);
-            }
-            enterPhase(IRRIG_DIST);
-        }
-        break;
-
-    // ---- DIST: ember -> tanaman, berhenti pada dosis yang sudah dihitung. ----
-    case IRRIG_DIST:
-        if (now - phaseStart >= cycleDoseMs) {
-            enterPhase(IRRIG_IDLE);
+            setDist(false);
+            phase = IRRIG_IDLE;
             Serial.println("[irigasi] siklus selesai");
         }
-        break;
-
-    case IRRIG_IDLE:
-    default:
-        break;
     }
 }
