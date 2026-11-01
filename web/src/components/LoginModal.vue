@@ -38,13 +38,13 @@ async function submit() {
       <form @submit.prevent="submit">
         <label for="loginEmail" class="mb-1 mt-3 block text-xs font-semibold text-muted">Email</label>
         <input id="loginEmail" v-model="email" type="email" required autocomplete="username"
-               class="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-accent focus:shadow-[0_0_0_2px_rgba(21,101,192,.14)]">
+               class="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-accent focus:shadow-[0_0_0_2px_rgba(21,101,192,.14)]">
 
         <label for="loginPass" class="mb-1 mt-3 block text-xs font-semibold text-muted">Password</label>
         <input id="loginPass" v-model="pass" type="password" required autocomplete="currentpassword"
-               class="w-full rounded-lg border border-border bg-white px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-accent focus:shadow-[0_0_0_2px_rgba(21,101,192,.14)]">
+               class="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-ink outline-none transition-colors focus:border-accent focus:shadow-[0_0_0_2px_rgba(21,101,192,.14)]">
 
-        <button type="submit" class="mt-5 w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:bg-accent-dark">Masuk</button>
+        <button type="submit" class="mt-5 w-full rounded-lg bg-accent py-2.5 text-sm font-semibold text-white hover:bg-accent-hover">Masuk</button>
       </form>
 
       <p class="mt-3 min-h-4 text-xs text-danger">{{ state.loginError }}</p>

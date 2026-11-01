@@ -27,6 +27,16 @@ export const TREND_RANGE = {
   '24j': { limit: 4320, bucket: 600, pollMs: 900000, label: '24 jam' },
 };
 
+// Tema: pilihan tersimpan menang; tanpa pilihan ikut preferensi OS. Dibaca
+// sebelum state dibuat supaya applyTheme() bisa jalan di module scope (kelas
+// .dark sudah terpasang sebelum mount -> tidak ada kedip putih).
+const THEME_KEY = 'gh-theme';
+let savedTheme = null;
+try { savedTheme = localStorage.getItem(THEME_KEY); } catch (e) { /* mode privat */ }
+const initTheme = savedTheme === 'dark' || savedTheme === 'light'
+  ? savedTheme
+  : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
 export const state = reactive({
   // identitas & peran
   user: null,
@@ -52,6 +62,7 @@ export const state = reactive({
 
   // tampilan
   view: 'beranda',
+  theme: initTheme,
   // detak 1 detik: memaksa overrideSeconds (sisa waktu override) dihitung
   // ulang tanpa harus menunggu fetch berikutnya.
   tick: 0,
@@ -78,6 +89,21 @@ export const state = reactive({
   // rename inline
   renaming: -1,
 });
+
+// ------------------------------------------------------------------ tema ---
+// Satu sumber warna: token di style.css. Yang diganti di sini hanya kelas
+// `dark` di <html>; tidak ada kelas dark: di komponen. Perubahan tema OS saat
+// tab terbuka sengaja diabaikan (pilihan eksplisit pengguna menang).
+function applyTheme() {
+  document.documentElement.classList.toggle('dark', state.theme === 'dark');
+}
+applyTheme();
+
+export function toggleTheme() {
+  state.theme = state.theme === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem(THEME_KEY, state.theme); } catch (e) { /* mode privat */ }
+  applyTheme();
+}
 
 // ---------------------------------------------------------------- format ---
 // Angka sensor dibaca ADC 12-bit lalu jadi float: 1.421642 kPa / 5.4894 mm tidak

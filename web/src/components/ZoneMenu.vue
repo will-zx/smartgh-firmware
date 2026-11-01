@@ -47,7 +47,7 @@ async function finish(save) {
           <input
             ref="inputEl"
             v-model="draft"
-            class="m-1.5 min-w-0 flex-1 rounded-md border border-border bg-white px-2 py-1 text-[13px] text-ink outline-none focus:border-accent"
+            class="m-1.5 min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1 text-[13px] text-ink outline-none focus:border-accent"
             :aria-label="`Nama greenhouse ${z.id}`"
             @keydown.enter.prevent="finish(true)"
             @keydown.esc.prevent="finish(false)"

@@ -22,20 +22,22 @@ import { state, humanAge, zoneId } from '../store.js';
 // belakangnya. `transition` (bukan transition-colors) supaya filter ikut
 // beranimasi.
 const OLD = 'bg-warn-soft text-warn border-warn-line';
-const DARK = 'bg-off text-white border-white/30';
+const DARK = 'bg-off text-card border-white/30';
 
 // Tiga tingkat kesegaran data, memakai token yang sama dengan .pill-warn di
 // tabel log (krem = peringatan ringan, bukan kuning menyala yang bertabrakan
 // dengan biru topbar):
-//   segar (<=60 s)          hijau  bg-ok / teks putih
+//   segar (<=60 s)          hijau  bg-ok / teks kontras
 //   data lama (>60 s)       krem   bg-warn-soft / teks warn, tepi warn-line
-//   gagal baca / >1 hari    merah  bg-off / teks putih
+//   gagal baca / >1 hari    merah  bg-off / teks kontras
+// text-card = putih di tema terang, navy gelap di tema gelap: hijau & merah
+// tema gelap bernilai terang, jadi teks putih di atasnya gagal kontras.
 const cls = computed(() => {
   if (!state.online) return DARK;
   if (state.age === null) return OLD;
   if (state.age > 86400) return DARK;
   if (state.age > 60) return OLD;
-  return 'bg-ok text-white border-white/30';
+  return 'bg-ok text-card border-white/30';
 });
 
 const label = computed(() => {

@@ -11,9 +11,16 @@
   --color-ink: #212121;
   --color-muted: #616161;
   --color-accent: #1565c0;
+  /* accent-dark = TEKS di atas accent-soft (bukan tombol hover; tombol pakai
+     accent-hover supaya tetap terbaca saat tema gelap). */
   --color-accent-dark: #0d47a1;
+  --color-accent-hover: #0d47a1;
   --color-accent-light: #90caf9;
   --color-accent-soft: #e3f2fd;
+  --color-topbar: #1565c0;
+  /* VPD di grafik tren. Hijau dipakai untuk status ON/OK, jadi tidak boleh
+     dipakai lagi untuk seri data. */
+  --color-violet: #7c3aed;
   /* Hijau "segar": #388e3c hanya 4,12:1 terhadap putih — di bawah WCAG AA
      untuk teks normal, baik sebagai teks hijau di atas kartu putih maupun
      sebagai latar pill berteks putih. Digelapkan sedikit -> 5,13:1. */
@@ -33,6 +40,39 @@
 
   /* Breakpoint lama (900/700/420) dipertahankan supaya proporsi kartu
      tidak berubah: pakai min-[900px]: / max-[700px]: / max-[420px]: */
+}
+
+/* ============================================================ tema gelap ===
+   Satu-satunya tempat warna berubah. Komponen tidak memakai kelas dark: —
+   semua memakai token di @theme di atas, jadi menimpa variabelnya di sini
+   sudah cukup. Spesifisitas html.dark (0,1,1) > :root (0,1,0).
+   color-scheme membuat scrollbar & kontrol native ikut gelap. */
+html { color-scheme: light; }
+html.dark {
+  color-scheme: dark;
+  --color-bg: #070b16;
+  --color-card: #0f1728;
+  --color-card-2: #16203a;
+  --color-border: #23304d;
+  --color-ink: #e8eefb;
+  --color-muted: #9aa8c4;
+  --color-accent: #1e6fd9;
+  /* Di tema gelap accent-dark dipakai sebagai TEKS di atas accent-soft, jadi
+     nilainya terang. Tombol memakai accent-hover, bukan token ini. */
+  --color-accent-dark: #8ec5ff;
+  --color-accent-hover: #2f83ef;
+  --color-accent-soft: #132542;
+  --color-accent-light: #1b3a63;
+  --color-ok: #4ade80;
+  --color-danger: #ff6b6b;
+  --color-danger-soft: #2a1518;
+  --color-warn: #ffc46b;
+  --color-warn-soft: #2a2110;
+  --color-warn-line: #6b5320;
+  --color-track: #1f3154;
+  --color-off: #ff5c55;
+  --color-topbar: #0a1120;
+  --color-violet: #a78bfa;
 }
 
 /* Ikon brand di topbar: greenhouse.png sebagai mask, persis .brand-icon lama.

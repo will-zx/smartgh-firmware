@@ -40,7 +40,7 @@ function fmtDur(s) {
   return parts.length ? parts.join(' ') : '0 detik';
 }
 
-const inputCls = 'w-full rounded-lg border border-border bg-white px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent focus:shadow-[0_0_0_2px_rgba(21,101,192,.14)]';
+const inputCls = 'w-full rounded-lg border border-border bg-card px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent focus:shadow-[0_0_0_2px_rgba(21,101,192,.14)]';
 const btnCls = 'inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-[12px] font-semibold text-ink hover:bg-card-2 disabled:opacity-50';
 </script>
 
@@ -84,32 +84,32 @@ const btnCls = 'inline-flex items-center justify-center gap-1.5 rounded-lg borde
         <label class="mb-1 block text-[11.5px] font-semibold text-muted" for="vpdTarget">Target VPD (kPa)</label>
         <div class="flex gap-2">
           <input id="vpdTarget" v-model="vpdInput" type="number" :min="VPD_TARGET_MIN" :max="VPD_TARGET_MAX" step="0.1"
-                 class="w-full min-w-0 rounded-lg border border-border bg-white px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent"
+                 class="w-full min-w-0 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent"
                  :placeholder="phase?.target != null ? String(phase.target) : '1.0'">
-          <button type="button" class="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-accent-dark" @click="setVpdTarget(vpdInput)">Terapkan</button>
+          <button type="button" class="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-accent-hover" @click="setVpdTarget(vpdInput)">Terapkan</button>
         </div>
       </div>
 
       <div>
         <label class="mb-1 block text-[11.5px] font-semibold text-muted" for="faseName">Nama fase</label>
         <div class="flex gap-2">
-          <input id="faseName" v-model="nameInput" type="text" maxlength="23" class="w-full min-w-0 rounded-lg border border-border bg-white px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent"
+          <input id="faseName" v-model="nameInput" type="text" maxlength="23" class="w-full min-w-0 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent"
                  :placeholder="phase?.name || 'Vegetatif'">
-          <button type="button" class="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-accent-dark" @click="setPhaseName(nameInput)">Terapkan</button>
+          <button type="button" class="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-accent-hover" @click="setPhaseName(nameInput)">Terapkan</button>
         </div>
       </div>
 
       <div>
         <label class="mb-1 block text-[11.5px] font-semibold text-muted" for="faseDurasi">Durasi fase</label>
         <div class="flex gap-2">
-          <input id="faseDurasi" v-model="durInput" type="number" min="0" step="1" class="w-full min-w-0 rounded-lg border border-border bg-white px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent" placeholder="14">
-          <select v-model="durUnit" class="shrink-0 rounded-lg border border-border bg-white px-2 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent">
+          <input id="faseDurasi" v-model="durInput" type="number" min="0" step="1" class="w-full min-w-0 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent" placeholder="14">
+          <select v-model="durUnit" class="shrink-0 rounded-lg border border-border bg-card px-2 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent">
             <option value="detik">detik</option>
             <option value="menit">menit</option>
             <option value="jam">jam</option>
             <option value="hari">hari</option>
           </select>
-          <button type="button" class="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-accent-dark" @click="setPhaseDuration(durInput, durUnit)">Terapkan</button>
+          <button type="button" class="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-white hover:bg-accent-hover" @click="setPhaseDuration(durInput, durUnit)">Terapkan</button>
         </div>
       </div>
     </div>
