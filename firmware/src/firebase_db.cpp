@@ -48,6 +48,16 @@ static HTTPClient http;
 //   mist_ov          string  override misting: "auto" | "manual" | "forced"
 //   irig_ov          string  override irigasi: "auto" | "manual" | "forced"
 //   blower_ov        string  override blower:  "auto" | "manual" | "forced"
+//   mist_ov_sisa_s   s       sisa waktu override misting (hanya bila
+//                            mist_ov != "auto"); absen = auto
+//   irig_ov_sisa_s   s       sisa waktu override irigasi (syarat sama)
+//   blower_ov_sisa_s s       sisa waktu override blower (syarat sama)
+//   fuzzy_mist       bool    keputusan fuzzy misting SEBELUM override manual
+//   fuzzy_blower     bool    keputusan fuzzy blower SEBELUM override manual
+//   fuzzy_irigasi    bool    keputusan fuzzy irigasi SEBELUM override manual
+//                            (dashboard menampilkan "FUZZY: ON/OFF" dari tiga
+//                            field ini; misting/irigasi/blower di atas adalah
+//                            yang BENAR-BENAR dijalankan setelah override)
 //   fase             string  nama fase pertumbuhan
 //   vpd_target       kPa     target VPD fase
 //   fase_aktif       bool    mode setpoint aktif
@@ -245,7 +255,7 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
                    float blowerLevel, bool misting, bool irigasi,
                    const char* statusSistem, bool manualMode, const PhaseState& phase,
                    const OverrideState& ov, float tmean, const IrrigStatus& irig,
-                   String* bodyOut) {
+                   const FuzzyOutput& fuzzy, String* bodyOut) {
     // ts = epoch (NTP). Kalau NTP belum sinkron, record TETAP dikirim (tanda
     // kehidupan device) tapi TANPA field ts — epoch 1970 tidak boleh masuk
     // RTDB karena dashboard mengurutkan/menghitung umurnya dari ts.
@@ -274,10 +284,20 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
     doc["irigasi"] = irigasi;
     doc["status_sistem"] = statusSistem;
     doc["manual_mode"] = manualMode;
+    // Keputusan fuzzy SEBELUM override manual: dashboard memakai ini untuk
+    // baris "FUZZY: ON/OFF" yang terpisah dari aktuator yang benar-benar jalan.
+    doc["fuzzy_mist"] = fuzzy.mistOn;
+    doc["fuzzy_blower"] = fuzzy.blowerOn;
+    doc["fuzzy_irigasi"] = fuzzy.irigasiOn;
     // Status override per aktuator (sakelar dashboard).
     doc["mist_ov"] = ovName(ov.mist);
     doc["irig_ov"] = ovName(ov.irig);
     doc["blower_ov"] = ovName(ov.blower);
+    // Sisa detik override: HANYA dikirim saat override aktif. *_ov sudah
+    // menyatakan "auto", jadi 0 tidak boleh terkirim (bisa dibaca "habis").
+    if (ov.mist   >= 0) doc["mist_ov_sisa_s"]   = ov.sisaMist;
+    if (ov.irig   >= 0) doc["irig_ov_sisa_s"]   = ov.sisaIrig;
+    if (ov.blower >= 0) doc["blower_ov_sisa_s"] = ov.sisaBlower;
     // Telemetri fase & VPD target (di-set admin dari dashboard).
     doc["fase"] = phase.name;
     doc["vpd_target"] = phase.vpdTarget;

@@ -5,6 +5,7 @@
 #include "phase.h"
 #include "control.h"
 #include "irrigation.h"
+#include "fuzzy.h"
 
 // Push satu log sensor ke /sensor_logs. Mengembalikan true jika HTTP 2xx.
 // bodyOut (opsional) diisi JSON yang dikirim — dipakai SD logger utk antrian.
@@ -12,6 +13,7 @@
 // ov: status override manual per aktuator (mist_ov/irig_ov/blower_ov).
 // tmean: suhu rata-rata sliding yang dipakai menghitung ETc (approach label).
 // irig: dosis/durasi/anggaran/terpakai irigasi (telemetri dashboard).
+// fuzzy: keputusan fuzzy SEBELUM override manual (fuzzy_mist/blower/irigasi).
 // soilOk/soilCount: bitmask + jumlah probe tanah valid (selalu dikirim, juga
 // saat semuanya mati).
 bool pushSensorLog(float temperature, float humidity, float soil, float soil2, float soil3,
@@ -20,6 +22,7 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
                    float blowerLevel, bool misting, bool irigasi,
                    const char* statusSistem, bool manualMode, const PhaseState& phase,
                    const OverrideState& ov, float tmean, const IrrigStatus& irig,
+                   const FuzzyOutput& fuzzy,
                    String* bodyOut = nullptr);
 // POST body JSON apa pun ke /sensor_logs (untuk backfill backlog MicroSD).
 bool httpPostSensorLogs(const String& body);

@@ -39,6 +39,9 @@ struct Snapshot {
     PhaseState phase;   // setelan fase + VPD target (untuk telemetri DB)
     OverrideState ov;   // status override manual per aktuator (sakelar dashboard)
     IrrigStatus irig;   // dosis/durasi/anggaran irigasi (telemetri DB)
+    // Keputusan fuzzy SEBELUM override manual menimpanya: dashboard perlu
+    // baris "FUZZY: ON/OFF" yang terpisah dari status aktuator sebenarnya.
+    bool fuzzyMist, fuzzyBlower, fuzzyIrigasi;
 };
 
 static Snapshot gSnap;
@@ -324,6 +327,10 @@ static void controlTask(void* arg) {
             }
         }
 
+        // Keputusan otomatis (fuzzy + koreksi setpoint VPD) SEBELUM override
+        // manual menimpanya. Ini yang dilaporkan sebagai fuzzy_* ke dashboard.
+        bool fuzzyMist = mist, fuzzyBlower = blower, fuzzyIrigasi = irigasi;
+
         // Override manual (tris-tata per aktuator) — manual tetap menang.
         if (sensorData.valid) controlApply(&mist, &irigasi, &blower, &blowerLevel);
         bool manual = controlIsManual();
@@ -432,6 +439,9 @@ static void controlTask(void* arg) {
         s.blowerLevel = blowerLevel;   // keluaran fuzzy yang jadi perintah PWM
         s.ov = ov;
         s.irig = irig;
+        s.fuzzyMist = fuzzyMist;
+        s.fuzzyBlower = fuzzyBlower;
+        s.fuzzyIrigasi = fuzzyIrigasi;
         // status_sistem = label aksi (buildStatus) + penanda kegagalan sensor/
         // jam. Dashboard membaca string ini (pill + tabel + ikon error), jadi
         // penanda kegagalan harus ikut di sini; sakelar aktuator sendiri dibaca
@@ -488,11 +498,16 @@ static void netTask(void* arg) {
         if (now - lastPush >= DB_PUSH_MS) {
             lastPush = now;
             String body;
+            // Keputusan fuzzy sebelum override, dirakit dari snapshot supaya
+            // netTask tidak menyentuh state kontrol. blowerLevel di sini tidak
+            // dipakai pushSensorLog (duty dilaporkan dari snapshot).
+            FuzzyOutput fz = { s.fuzzyMist, s.fuzzyBlower, s.blowerLevel,
+                               s.fuzzyIrigasi, nullptr };
             bool ok = pushSensorLog(s.temperature, s.humidity, s.soilMoisture,
                                     s.soil2, s.soil3, s.soilOk, s.soilCount,
                                     s.vpd, s.etc, s.blowerLevel, s.mist,
                                     s.irigasiRunning, s.status, s.manual, s.phase,
-                                    s.ov, s.tmean, s.irig, &body);
+                                    s.ov, s.tmean, s.irig, fz, &body);
             if (ok) {
                 sdFlushBacklog();   // pulih: kirim antrean yang tertunda
             } else if (body.length() > 0) {

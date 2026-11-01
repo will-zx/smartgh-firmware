@@ -16,8 +16,11 @@ enum : uint8_t { C_MIST = 1 << 0, C_IRIG = 1 << 1, C_BLOWER = 1 << 2 };
 // Status override per aktuator (dikirim ke RTDB supaya dashboard bisa
 // menampilkan sakelar override, bukan status aktuator):
 //   -1 = "auto" (ikut fuzzy), 0 = "forced" (dipaksa mati), 1 = "manual" (dipaksa nyala)
+// sisaX = detik sisa sampai override aktuator itu kedaluwarsa (MANUAL_MAX_MS);
+// 0 bila aktuator itu auto (tidak ada hitungan mundur).
 struct OverrideState {
-    int8_t mist, irig, blower;
+    int8_t   mist, irig, blower;
+    uint16_t sisaMist, sisaIrig, sisaBlower;
 };
 
 void controlInit();   // buat mutex — panggil sebelum task dibuat

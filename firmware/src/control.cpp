@@ -96,10 +96,26 @@ bool controlIsManual() {
     return r;
 }
 
+// Sisa detik override. Dijepit di 0: expireManual() hanya mengedaluwarsakan
+// satu aktuator per panggilan, jadi aktuator lain bisa sesaat sudah lewat
+// batas tanpa pengurangan unsigned yang membalik jadi angka raksasa.
+static uint16_t sisaDetik(int8_t ov, unsigned long t, unsigned long now) {
+    if (ov < 0) return 0;
+    unsigned long lewat = now - t;
+    if (lewat >= MANUAL_MAX_MS) return 0;
+    return (uint16_t)((MANUAL_MAX_MS - lewat) / 1000UL);
+}
+
 OverrideState controlOverrides() {
     lock();
     expireManual();
-    OverrideState ov = { ovMist, ovIrig, ovBlower };
+    unsigned long now = millis();
+    OverrideState ov = {
+        ovMist, ovIrig, ovBlower,
+        sisaDetik(ovMist,   tMist,   now),
+        sisaDetik(ovIrig,   tIrig,   now),
+        sisaDetik(ovBlower, tBlower, now),
+    };
     unlock();
     return ov;
 }
