@@ -1,39 +1,49 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { Chart, LineController, LineElement, PointElement, LinearScale, CategoryScale, Legend, Tooltip } from 'chart.js';
-import { state, fmtClock, humanAge, TREND_RANGE, setTrendRange, trendData, zoneName, refreshWithSpin } from '../store.js';
+import { state, humanAge, TREND_RANGE, setTrendRange, trendData, zoneName, refreshWithSpin } from '../store.js';
 
 // Registrasi manual (bukan chart.js/auto) supaya bundel hanya membawa yang dipakai.
 Chart.register(LineController, LineElement, PointElement, LinearScale, CategoryScale, Legend, Tooltip);
 
 // Grafik membaca palet yang sama dengan Tailwind, jadi tidak ada warna yang
-// "melenceng" dari skema dashboard.
+// "melenceng" dari skema dashboard. Dibaca ulang setiap tema berganti —
+// nilainya berubah di html.dark, bukan di JS.
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-const C = {
-  danger: cssVar('--color-danger'), accent: cssVar('--color-accent'),
-  warn: cssVar('--color-warn'), ok: cssVar('--color-ok'),
-  muted: cssVar('--color-muted'), card2: cssVar('--color-card-2'),
-};
 
-function line(label, color, yAxisID, extra = {}) {
+function readPalette() {
+  return {
+    danger: cssVar('--color-danger'),
+    accent: cssVar('--color-accent'),
+    violet: cssVar('--color-violet'),
+    muted: cssVar('--color-muted'),
+    card2: cssVar('--color-card-2'),
+    border: cssVar('--color-border'),
+  };
+}
+
+function line(color, label, yAxisID) {
   return {
     label, yAxisID, data: [],
     borderColor: color, pointBackgroundColor: color,
-    pointRadius: 3, pointHoverRadius: 5, borderWidth: 2, tension: 0,
-    ...extra,
+    // Garisnya yang dibaca, bukan titiknya: 1080 titik dengan radius 3 membuat
+    // seri tampak seperti pita tebal. Titik hanya muncul saat hover.
+    pointRadius: 0, pointHoverRadius: 4, borderWidth: 1.8, tension: 0,
   };
 }
 
 // Satu kartu grafik: suhu & RH di sumbu masing-masing, VPD di sumbu kanan
 // kedua (Chart.js menumpuk dua sumbu berposisi 'right').
 // Target VPD sengaja TIDAK digambar: nilainya sudah terbaca di kartu Fase &
-// Setpoint VPD (PhasePanel), dan garis kedua dengan warna sama hanya membuat
-// VPD hasil ukur lebih sulit dibaca.
-const datasets = [
-  line('Suhu (°C)', C.danger, 'y'),
-  line('Kelembapan (%)', C.accent, 'y1'),
-  line('VPD (kPa)', C.ok, 'y2'),
-];
+// Setpoint VPD (PhasePanel), dan garis kedua hanya membuat VPD sulit dibaca.
+// VPD memakai ungu: hijau sudah berarti "status ON/OK" di seluruh dashboard.
+function buildDatasets(C) {
+  return [
+    line(C.danger, 'Suhu (°C)', 'y'),
+    line(C.accent, 'Kelembapan (%)', 'y1'),
+    line(C.violet, 'VPD (kPa)', 'y2'),
+  ];
+}
 // Field di trendData yang mengisi tiap dataset, urut sesuai datasets di atas.
 const KEYS = ['temperature', 'humidity', 'vpd'];
 
@@ -45,40 +55,49 @@ let narrow = false;
 
 // suggestedMin/Max, bukan min/max: rentang tetap supaya kemiringan garis jujur.
 // Tanpa ini Chart.js auto-zoom dan 0.5°C terlihat seperti lonjakan besar.
-const scales = {
-  x: {
-    grid: { color: C.card2 },
-    ticks: { color: C.muted, maxTicksLimit: 8, maxRotation: 0, autoSkipPadding: 12 }
-  },
-  y: {
-    type: 'linear', position: 'left', suggestedMin: 20, suggestedMax: 40,
-    grid: { color: C.card2 }, border: { display: false },
-    ticks: { color: C.danger, maxTicksLimit: 6 },
-    title: { display: true, text: 'Suhu (°C)', color: C.danger, font: { weight: 600 } }
-  },
-  y1: {
-    type: 'linear', position: 'right', suggestedMin: 0, suggestedMax: 100,
-    grid: { drawOnChartArea: false }, border: { display: false },
-    ticks: { color: C.accent, maxTicksLimit: 6 },
-    title: { display: true, text: 'Kelembapan (%)', color: C.accent, font: { weight: 600 } }
-  },
-  y2: {
-    type: 'linear', position: 'right', suggestedMin: 0, suggestedMax: 4,
-    grid: { drawOnChartArea: false }, border: { display: false },
-    ticks: { color: C.ok, maxTicksLimit: 6 },
-    title: { display: true, text: 'VPD (kPa)', color: C.ok, font: { weight: 600 } }
-  },
-};
+function buildScales(C) {
+  return {
+    x: {
+      grid: { color: C.card2, borderDash: [3, 3] },
+      ticks: { color: C.muted, maxTicksLimit: 8, maxRotation: 0, autoSkipPadding: 12 }
+    },
+    y: {
+      type: 'linear', position: 'left', suggestedMin: 20, suggestedMax: 40,
+      grid: { color: C.card2, borderDash: [3, 3] }, border: { display: false },
+      ticks: { color: C.danger, maxTicksLimit: 6 },
+      title: { display: true, text: 'Suhu (°C)', color: C.danger, font: { weight: 600 } }
+    },
+    y1: {
+      type: 'linear', position: 'right', suggestedMin: 0, suggestedMax: 100,
+      grid: { drawOnChartArea: false }, border: { display: false },
+      ticks: { color: C.accent, maxTicksLimit: 6 },
+      title: { display: true, text: 'Kelembapan (%)', color: C.accent, font: { weight: 600 } }
+    },
+    y2: {
+      type: 'linear', position: 'right', suggestedMin: 0, suggestedMax: 4,
+      grid: { drawOnChartArea: false }, border: { display: false },
+      ticks: { color: C.violet, maxTicksLimit: 6 },
+      title: { display: true, text: 'VPD (kPa)', color: C.violet, font: { weight: 600 } }
+    },
+  };
+}
+
+let C = readPalette();
 
 const el = ref(null);
 let chart;
 
 // Sumbu X sudah menunjuk waktunya, jadi cukup "nilai + satuan" - tidak perlu
-// mengulang label. Satuan ikut sumbu tempat seri itu digambar.
+// mengulang label. Satuan ikut sumbu tempat seri itu digambar. Tetap 2 desimal.
 const UNIT = { y: '°C', y1: '%', y2: 'kPa' };
 const label = c =>
   ' ' + c.dataset.label.replace(/\s*\(.*\)/, '') + ': ' +
   c.parsed.y.toFixed(2) + ' ' + (UNIT[c.dataset.yAxisID] || '');
+
+// Label sumbu X: jam:menit. Bucket grafik 5/10 menit, jadi detik tidak
+// menambah informasi — hanya membuat label panjang dan tumpang tindih.
+const fmtHM = ts => new Date(ts * 1000)
+  .toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }).replace(/\./g, ':');
 
 // Judul sumbu kanan hanya berguna kalau ada ruang; di ponsel dua judul itu
 // memakan ~1/3 lebar grafik dan mendorong sisa ruang mati di kiri.
@@ -98,9 +117,13 @@ function onResize() {
 
 onMounted(() => {
   narrow = window.innerWidth < NARROW;
+  // Default global: legenda & tooltip Chart.js memakai #666, tidak terbaca di
+  // tema gelap. Diset dari token yang sama dengan komponen.
+  Chart.defaults.color = C.muted;
+  Chart.defaults.borderColor = C.border;
   chart = new Chart(el.value, {
     type: 'line',
-    data: { labels: [], datasets },
+    data: { labels: [], datasets: buildDatasets(C) },
     options: {
       responsive: true,
       maintainAspectRatio: false,
@@ -117,7 +140,7 @@ onMounted(() => {
           callbacks: { label }
         }
       },
-      scales,
+      scales: buildScales(C),
     }
   });
   applyNarrow();
@@ -129,11 +152,24 @@ onMounted(() => {
 // ikut tanpa render ulang manual, karena trendData computed dari store.
 watch(trendData, sync);
 
+// Tema berganti = token CSS berganti. Palet, sumbu, dan dataset harus dibangun
+// ulang: warna di chart.options tidak ikut var(--color-*) secara otomatis.
+watch(() => state.theme, () => {
+  if (!chart) return;
+  C = readPalette();
+  Chart.defaults.color = C.muted;
+  Chart.defaults.borderColor = C.border;
+  chart.options.scales = buildScales(C);
+  chart.data.datasets = buildDatasets(C);
+  sync();
+  applyNarrow();
+});
+
 function sync() {
   if (!chart) return;
-  // Sumbu X: jam saja — label penuh tidak muat. Record tanpa ts tidak pernah
-  // sampai ke sini (trendData membuangnya), jadi tidak ada label "?".
-  chart.data.labels = trendData.value.map(l => fmtClock(l.ts));
+  // Record tanpa ts tidak pernah sampai ke sini (trendData membuangnya), jadi
+  // tidak ada label "?".
+  chart.data.labels = trendData.value.map(l => fmtHM(l.ts));
   // Field yang tidak ada (record lama / sensor invalid) -> null, bukan 0:
   // Chart.js menggambar celah, jadi tidak ada titik 0 palsu di grafik.
   chart.data.datasets.forEach((ds, i) => { ds.data = trendData.value.map(l => l[KEYS[i]]); });
