@@ -52,6 +52,9 @@ export const state = reactive({
 
   // tampilan
   view: 'beranda',
+  // detak 1 detik: memaksa overrideSeconds (sisa waktu override) dihitung
+  // ulang tanpa harus menunggu fetch berikutnya.
+  tick: 0,
   loginOpen: false,
   loginError: '',
   userMenuOpen: false,
@@ -59,8 +62,10 @@ export const state = reactive({
   zoneMsg: { text: '', ok: false, show: false },
   cmdStatus: '',
   cmdError: '',
-  // perintah yang sudah terkirim tapi belum dikonfirmasi perangkat
-  pending: null,
+  // perintah yang sudah terkirim tapi belum dikonfirmasi perangkat.
+  // Per-aktuator: { mist|irigasi|blower|phase: {...} } — satu aktuator yang
+  // masih menunggu tidak memblokir aktuator lain.
+  pending: {},
   spinning: false,
 
   // koneksi
@@ -132,6 +137,13 @@ export function humanAge(sec) {
 // Field yang tidak terbaca TIDAK dikirim sama sekali (firmware membuang NaN),
 // jadi "tidak ada" != 0 — harus tampil "-", bukan angka nol palsu.
 const numOrNull = v => (typeof v === 'number' && isFinite(v)) ? v : null;
+// Boolean dari firmware bisa datang sebagai bool, angka 0/1, atau tidak ada.
+// null = firmware belum mengirim -> UI menyembunyikan barisnya, bukan menebak 0.
+const boolOrNull = v => {
+  if (typeof v === 'boolean') return v;
+  if (typeof v === 'number' && isFinite(v)) return v > 0;
+  return null;
+};
 
 // Status override per aktuator:
 //   'auto'   -> ikut fuzzy (tidak ada override)
@@ -231,6 +243,20 @@ export function normLog(l, key) {
     status,          // label bersih (null bila hanya berisi penanda)
     statusRaw,       // string mentah: pencarian & ekspor CSV
     manual: src.manual_mode === true,
+    // Keluaran fuzzy (yang DIMINTAKAN, bukan yang berjalan). null = firmware
+    // belum mengirimnya; UI menyembunyikan baris FUZZY, tidak menulis "OFF".
+    fuzzy: {
+      mist: boolOrNull(src.fuzzy_mist),
+      irigasi: boolOrNull(src.fuzzy_irigasi),
+      blower: boolOrNull(src.fuzzy_blower),
+    },
+    // Sisa waktu override dari perangkat (detik). Dihitung saat record dibuat;
+    // overrideSeconds menambahkan selisih waktu sejak record diterima.
+    ovLeft: {
+      mist: numOrNull(src.mist_ov_sisa_s),
+      irigasi: numOrNull(src.irig_ov_sisa_s),
+      blower: numOrNull(src.blower_ov_sisa_s),
+    },
     flags: {
       sensorError: /sensor error/i.test(statusRaw),
       soilErr: statusRaw.includes('SOILERR'),
@@ -325,6 +351,9 @@ export async function loadLabels() {
 // terbaru belum punya ts.
 let latestAny = null;
 let fetchSeq = 0;
+// Kapan lastData diterima (ms lokal). Dipakai overrideSeconds: sisa override
+// dikirim firmware untuk saat record dibuat, bukan saat dibaca.
+let lastDataAt = 0;
 
 function updateAge() {
   const d = state.lastData;
@@ -371,6 +400,7 @@ export async function fetchDataLogs() {
     const trusted = rows.filter(clockTrusted);
     state.lastData = trusted.length ? trusted[trusted.length - 1] : latestAny;
     if (!state.lastData) throw new Error('kosong');
+    lastDataAt = Date.now();
 
     // Offline bukan cuma fetch gagal: log terakhir yang basi juga berarti
     // ESP32 yang hidup tapi tidak push (padam/offline). Umur hanya bermakna
@@ -443,23 +473,33 @@ export const trendData = computed(() => {
 
 let timer = null;
 let ageTimer = null;
+let ovTimer = null;
 function startAgeTimer() {
   if (ageTimer) clearInterval(ageTimer);
   ageTimer = setInterval(updateAge, 30000);
+}
+// Satu detak per detik untuk hitung mundur chip OVERRIDE. Tidak mem-fetch apa
+// pun — hanya menaikkan state.tick supaya computed overrideSeconds dihitung ulang.
+function startOvTimer() {
+  if (ovTimer) clearInterval(ovTimer);
+  ovTimer = setInterval(() => { state.tick++; }, 1000);
 }
 export function startPolling() {
   loadLabels().then(() => {
     fetchDataLogs();
     startTimer();
     startAgeTimer();
+    startOvTimer();
   });
   document.addEventListener('visibilitychange', onVisibility);
 }
 export function stopPolling() {
   clearInterval(timer);
   clearInterval(ageTimer);
+  clearInterval(ovTimer);
   timer = null;
   ageTimer = null;
+  ovTimer = null;
   document.removeEventListener('visibilitychange', onVisibility);
 }
 
@@ -475,12 +515,15 @@ function onVisibility() {
   if (document.visibilityState === 'hidden') {
     clearInterval(timer);
     clearInterval(ageTimer);
+    clearInterval(ovTimer);
     timer = null;
     ageTimer = null;
+    ovTimer = null;
   } else {
     fetchDataLogs();
     startTimer();
     startAgeTimer();
+    startOvTimer();
   }
 }
 
@@ -500,41 +543,30 @@ export function setTrendRange(r) {
 // Nama aktuator -> label Indonesia (dipakai di pesan).
 const ACT_NAMES = { mist: 'Misting', irigasi: 'Irigasi', blower: 'Blower' };
 
-// Status override yang tampil: HANYA dari record perangkat, tanpa tebakan.
-// Sebelum perangkat melapor, menebak "paksa nyala/mati" menghasilkan baris yang
-// bertentangan sendiri ("Paksa mati · status MENYALA"). Umpan balik klik
-// diberikan oleh posisi knob (switchOn); teks di bawah kartu sudah menyatakan
-// "perintah terkirim — menunggu konfirmasi".
-export const overrideStates = computed(() => state.lastData
+// Mode per aktuator: 'auto' (ikut fuzzy) | 'on' (paksa nyala) | 'off' (paksa
+// mati) | 'unknown' (ada override, tapi perangkat tidak menyebut yang mana).
+// HANYA dari record perangkat, tanpa tebakan: sebelum perangkat melapor,
+// menebak "paksa nyala" menghasilkan baris yang bertentangan sendiri
+// ("Paksa mati · status MENYALA"). Umpan balik klik diberikan oleh pesan
+// "perintah terkirim — menunggu konfirmasi perangkat".
+export const actuatorModes = computed(() => state.lastData
   ? { ...state.lastData.override }
   : { mist: 'auto', irigasi: 'auto', blower: 'auto' });
 
-// Posisi knob sakelar = kehendak operator. Default: keadaan yang dilaporkan
-// perangkat; selama perintah masih pending, knob menampilkan mode yang dikirim
-// supaya klik langsung terlihat. Pending hilang sendiri saat cmdConfirmed()
-// true atau timeout, jadi knob kembali ke record tanpa kode tambahan.
-export const switchOn = computed(() => {
+// Sisa waktu override per aktuator (detik). Firmware mengirim sisa SAAT RECORD
+// DIBUAT, jadi angkanya harus dikurangi selisih waktu sejak record diterima.
+// Field tidak ada (firmware lama) -> 0, chip OVERRIDE tidak muncul.
+export const overrideSeconds = computed(() => {
+  void state.tick;   // detak 1 detik -> hitung ulang
   const d = state.lastData;
-  const on = {
-    mist: d?.misting === true,
-    irigasi: d?.irigasi === true,
-    blower: d?.blower === true,
-  };
-  const p = state.pending;
-  if (p && p.action in on) on[p.action] = p.mode ? p.mode === 'on' : !!p.value;
-  return on;
-});
-
-// Ringkasan override manual: aktuator mana yang sedang di-override.
-export const manualInfo = computed(() => {
-  const ov = overrideStates.value;
-  const items = [];
-  for (const k of ['mist', 'irigasi', 'blower']) {
-    if (ov[k] === 'on') items.push({ key: k, name: ACT_NAMES[k], mode: 'paksa nyala' });
-    else if (ov[k] === 'off') items.push({ key: k, name: ACT_NAMES[k], mode: 'paksa mati' });
+  const out = { mist: 0, irigasi: 0, blower: 0 };
+  if (!d) return out;
+  const since = Math.max(0, Math.floor((Date.now() - lastDataAt) / 1000));
+  for (const k in out) {
+    const sisa = d.ovLeft[k];
+    out[k] = sisa === null ? 0 : Math.max(0, Math.floor(sisa) - since);
   }
-  const unknown = Object.values(ov).includes('unknown');
-  return { items, unknown, any: items.length > 0 || unknown };
+  return out;
 });
 
 // Keadaan aktuator yang DILAPORKAN perangkat (misting/irigasi/blower). Ini yang
@@ -542,19 +574,20 @@ export const manualInfo = computed(() => {
 // baris teks mode, supaya status tidak pernah berbohong soal apa yang berjalan.
 export const actuators = computed(() => {
   const d = state.lastData;
-  const ov = overrideStates.value;
   if (!d) {
-    return { mist: false, irigasi: false, blower: false, level: null, override: ov, manual: false, status: '', flags: null };
+    return {
+      mist: false, irigasi: false, blower: false, level: null,
+      status: '', flags: null, fuzzy: { mist: null, irigasi: null, blower: null },
+    };
   }
   return {
     mist: d.misting,
     irigasi: d.irigasi,
     blower: d.blower,
     level: d.blowerLevel,
-    override: ov,
-    manual: d.manual,
     status: d.status,
     flags: d.flags,
+    fuzzy: d.fuzzy,
   };
 });
 
@@ -601,18 +634,21 @@ function cmdConfirmed(cmd, row) {
   if (!row) return false;
   switch (cmd.action) {
     case 'auto':
-      return row.manual === false;
+      // releaseAll(): semua aktuator harus benar-benar kembali ke fuzzy. Dulu
+      // memakai row.manual (satu bitmask global), sehingga satu aktuator yang
+      // masih di-override membuat tombol ini "belum dieksekusi" padahal
+      // aktuator lain sudah lepas.
+      return ['mist', 'irigasi', 'blower'].every(k => row.override[k] === 'auto');
     case 'mist': case 'irigasi': case 'blower': {
       // Dikonfirmasi dari status OVERRIDE hasil normalisasi ("manual" -> 'on',
-      // "forced" -> 'off'), bukan dari boolean aktuator: irigasi hanya menyala
-      // selama siklus berjalan, jadi boolean-nya bisa sudah MATI lagi saat
-      // record berikutnya masuk. Dari override, perintah "paksa mati" pun
-      // terlihat jelas tanpa harus bergantung pada aktuator yang kebetulan
-      // belum/tidak menyala.
+      // "forced" -> 'off', "auto" -> 'auto'), bukan dari boolean aktuator:
+      // irigasi hanya menyala selama siklus berjalan, jadi boolean-nya bisa
+      // sudah MATI lagi saat record berikutnya masuk. Dari override, perintah
+      // "paksa mati" pun terlihat jelas tanpa bergantung pada aktuator yang
+      // kebetulan belum/tidak menyala.
+      const mode = cmd.mode || (cmd.value ? 'on' : 'off');
       const ov = row.override[cmd.action];
-      if (ov === 'on' || ov === 'off') {
-        return ov === (cmd.mode || (cmd.value ? 'on' : 'off'));
-      }
+      if (ov === 'on' || ov === 'off' || ov === 'auto') return ov === mode;
       // Firmware tanpa status override per aktuator: konfirmasi paling banter
       // dari status aktuator saat ini (perilaku lama).
       return cmd.value ? row[cmd.action === 'mist' ? 'misting' : cmd.action] === true : row.manual === false;
@@ -631,27 +667,35 @@ function cmdConfirmed(cmd, row) {
 }
 
 // Perintah yang dikirim: apakah sudah dieksekusi, atau sudah lewat batas waktu?
+// Semua slot diperiksa: satu aktuator yang belum dikonfirmasi tidak menahan
+// perintah aktuator lain.
 function checkPending() {
-  const p = state.pending;
-  if (!p) return;
+  const slots = Object.entries(state.pending);
+  if (!slots.length) return;
   // Record terakhir menurut urutan tulis, bukan "data terakhir" tepercaya:
   // perangkat bisa mengeksekusi perintah lalu push record yang jamnya belum
   // sinkron. Memakai lastData saja menunda konfirmasi sampai NTP jalan.
-  if (cmdConfirmed(p, latestAny ?? state.lastData)) {
-    state.cmdStatus = 'Perintah ' + cmdLabel(p) + ' dieksekusi perangkat.';
-    state.cmdError = '';
-    state.pending = null;
-    return;
-  }
-  if (Date.now() > p.deadline) {
-    // Jangan kirim ulang otomatis: aktuator bisa aktif lagi (risiko
-    // actuation berulang). Laporkan terus terang, jangan diam-diam revert.
-    state.cmdError = 'Perintah ' + cmdLabel(p) + ' BELUM dieksekusi — perangkat tidak merespons dalam ' +
-      Math.round(CMD_TIMEOUT_MS / 1000) + ' detik. Tidak dikirim ulang otomatis.';
-    state.cmdStatus = '';
-    state.pending = null;
+  const row = latestAny ?? state.lastData;
+  for (const [key, p] of slots) {
+    if (cmdConfirmed(p, row)) {
+      state.cmdStatus = 'Perintah ' + cmdLabel(p) + ' dieksekusi perangkat.';
+      state.cmdError = '';
+      delete state.pending[key];
+    } else if (Date.now() > p.deadline) {
+      // Jangan kirim ulang otomatis: aktuator bisa aktif lagi (risiko
+      // actuation berulang). Laporkan terus terang, jangan diam-diam revert.
+      state.cmdError = 'Perintah ' + cmdLabel(p) + ' BELUM dieksekusi — perangkat tidak merespons dalam ' +
+        Math.round(CMD_TIMEOUT_MS / 1000) + ' detik. Tidak dikirim ulang otomatis.';
+      state.cmdStatus = '';
+      delete state.pending[key];
+    }
   }
 }
+
+// Slot antrean perintah: tiap aktuator punya slot sendiri, perintah setelan
+// fase berbagi satu slot 'phase' (masing-masing menunggu nilai terpasang yang
+// sama-sama dipush perangkat).
+const pendingKey = action => (action in ACT_NAMES ? action : 'phase');
 
 export async function sendCommand(action, value, extra = {}) {
   // Tamu tidak punya UI kontrol, tapi tetap dijaga agar tidak bisa menulis.
@@ -664,8 +708,9 @@ export async function sendCommand(action, value, extra = {}) {
     return;
   }
   checkPending();
-  if (state.pending) {
-    state.cmdStatus = 'Tunggu perintah sebelumnya selesai dulu';
+  const key = pendingKey(action);
+  if (state.pending[key]) {
+    state.cmdStatus = 'Tunggu perintah ' + cmdLabel(state.pending[key]) + ' selesai dulu';
     state.cmdError = '';
     return;
   }
@@ -685,7 +730,7 @@ export async function sendCommand(action, value, extra = {}) {
       body: JSON.stringify(body)
     });
     if (!res.ok) throw new Error('HTTP ' + res.status);
-    state.pending = {
+    state.pending[key] = {
       action, value,
       mode: extra.mode ?? null,
       seconds: extra.seconds ?? null,
@@ -700,14 +745,11 @@ export async function sendCommand(action, value, extra = {}) {
   }
 }
 
-// Sakelar aktuator = keadaan NYATA aktuator (posisi knob), sedang override
-// ditunjukkan warna track. Menyalakan sakelar = kirim mode "on" (paksa nyala);
-// mematikannya = mode "off" (paksa mati — untuk irigasi siklus dibatalkan),
-// BUKAN "lepas override". Satu-satunya jalan kembali ke fuzzy adalah tombol
-// "Kembali ke Auto" (releaseAll). Override juga expires sendiri setelah
-// 10 menit di firmware.
-export function onSwitch(action, on) {
-  sendCommand(action, on, { mode: on ? 'on' : 'off' });
+// Tiga posisi per aktuator: ON (paksa nyala), AUTO (ikut fuzzy), OFF (paksa
+// mati). Nilai `mode` dikirim apa adanya; `value` tetap diisi untuk firmware
+// lama (mode menang atas value).
+export function onSwitch(action, mode) {
+  sendCommand(action, mode !== 'auto', { mode });
 }
 
 // Tombol "Kembali ke Auto": semua aktuator kembali ke fuzzy (controlRelease).
@@ -857,10 +899,11 @@ export function switchZone(i) {
   state.logFilter = '';
   state.online = false;
   state.age = null;
-  state.pending = null;
+  state.pending = {};
   state.cmdStatus = '';
   state.cmdError = '';
   latestAny = null;   // jangan konfirmasi perintah zona baru dengan record zona lama
+  lastDataAt = 0;
   fetchDataLogs();
 }
 

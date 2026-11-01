@@ -1,9 +1,12 @@
 <script setup>
 import { computed } from 'vue';
-import { state, actuators, manualInfo, switchOn, onSwitch, releaseAll } from '../store.js';
+import { state, actuators, actuatorModes, overrideSeconds, onSwitch, releaseAll } from '../store.js';
 
 const a = computed(() => actuators.value);
-const mi = computed(() => manualInfo.value);
+// Mode yang DILAPORKAN perangkat: 'auto' | 'on' | 'off' | 'unknown'.
+const modes = computed(() => actuatorModes.value);
+// Sisa waktu override (detik), dihitung mundur dari jam lokal.
+const left = computed(() => overrideSeconds.value);
 
 // Telemetri irigasi: hanya durasi pompa dan jeda minimum. Dosis harian,
 // anggaran, dan air terpakai sudah tampil di kartu metrik — jangan diulang.
@@ -18,8 +21,16 @@ const igLine = computed(() => {
   return parts.length ? parts.join(' \u00b7 ') : null;
 });
 
+// Tiga posisi mode. Bukan checkbox: checkbox hanya bisa dua keadaan, padahal
+// AUTO (ikut fuzzy) berbeda dari OFF (paksa mati).
+const MODES = [
+  { v: 'on', label: 'ON', cls: 'bg-ok text-card', tip: 'Paksa nyala' },
+  { v: 'auto', label: 'AUTO', cls: 'bg-accent text-white', tip: 'Ikut fuzzy' },
+  { v: 'off', label: 'OFF', cls: 'bg-danger text-card', tip: 'Paksa mati' },
+];
+
 // Kartu Kontrol tetap terlihat untuk semua orang (=status aktuator berguna untuk
-// dipantau), tetapi sakelarnya disembunyikan bila belum login admin.
+// dipantau), tetapi segmented + "Kembali ke Auto" hanya untuk admin.
 //
 // `icon` = array path. Blower butuh ini: satu bilah digambar 3× lalu dirotasi
 // 120°. Path lama mengulang path yang SAMA tanpa rotasi, jadi yang tampil
@@ -28,37 +39,24 @@ const igLine = computed(() => {
 const BLADE = 'M12 12c-.4-2.6.4-4.8 2.6-5.9 1.9-.9 4-.2 4.8 1.6.8 1.9-.1 4-1.9 4.9-1.6.8-3.2.3-4.4-.6';
 const spin = d => [0, 120, 240].map(r => ({ d, t: `rotate(${r} 12 12)` }));
 
-// Teks mode override (baris kecil di bawah nama aktuator).
-//   auto  -> ikut fuzzy (tidak ada override)
-//   on    -> paksa nyala
-//   off   -> paksa mati
-//   unknown -> ada override tapi perangkat tidak menyebut aktuator mana
-const OV_TEXT = {
-  auto: 'Auto (ikut fuzzy)',
-  on: 'Paksa nyala',
-  off: 'Paksa mati',
-  unknown: 'Override (tidak dilaporkan)',
-};
-
-// Posisi sakelar = kehendak operator (langsung bergerak saat diklik, lalu
-// menyesuaikan record perangkat). Warna track hanya nyala/mati; mode override
-// (auto / paksa nyala / paksa mati) dibawa teks subline + banner di atas.
-const TIP = (nama, aksi) =>
-  `Sakelar ${nama}: posisi = perintah yang barusan dikirim, lalu disesuaikan dengan ` +
-  `laporan perangkat. ${aksi}. Override berakhir sendiri setelah 10 menit; ` +
-  'kembali ke fuzzy: tombol "Kembali ke Auto".';
-
 const items = computed(() => [
-  { key: 'mist', label: 'Misting', on: a.value.mist, icon: [{ d: 'M4 15a7 7 0 1 1 11.7-7H17a4.5 4.5 0 0 1 2.5 8.2M8 16v1.5M12 16v2M16 16v1.5' }],
-    tip: TIP('misting', 'Nyala = paksa nyala, mati = paksa mati') },
+  { key: 'mist', label: 'Misting', on: a.value.mist, icon: [{ d: 'M4 15a7 7 0 1 1 11.7-7H17a4.5 4.5 0 0 1 2.5 8.2M8 16v1.5M12 16v2M16 16v1.5' }] },
   { key: 'irigasi', label: 'Irigasi', on: a.value.irigasi, icon: [{ d: 'M7 3s3 5 3 7a3 3 0 0 1-6 0c0-2 3-7 3-7zM17 10s3 5 3 7a3 3 0 0 1-6 0c0-2 3-7 3-7z' }],
-    tip: TIP('irigasi', 'Nyala = paksa nyala, mati = paksa mati') + ' Paksa nyala menjalankan SATU siklus pompa DIST; paksa mati membatalkan siklus.' },
-  { key: 'blower', label: 'Blower', on: a.value.blower, icon: spin(BLADE), duty: a.value.level,
-    tip: TIP('blower', 'Nyala = paksa nyala, mati = paksa mati') + ' Duty di kanan = keluaran fuzzy yang berjalan.' },
+    note: 'Paksa nyala menjalankan SATU siklus pompa; paksa mati membatalkan siklus.' },
+  { key: 'blower', label: 'Blower', on: a.value.blower, icon: spin(BLADE), duty: a.value.level },
 ]);
 
-// Teks mode override per aktuator: 'on' | 'off' | 'auto' | 'unknown'.
-const ovOf = k => a.value.override[k] || 'auto';
+// mm:ss untuk chip hitung mundur.
+const mmss = s => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+
+// Chip hanya untuk mode paksa + sisa waktu diketahui. Mode AUTO tidak punya
+// hitung mundur, dan firmware lama tanpa *_ov_sisa_s -> 0 (chip disembunyikan,
+// bukan "00:00").
+const chipOf = k => {
+  const m = modes.value[k];
+  const s = left.value[k];
+  return (m === 'on' || m === 'off') && s > 0 ? { mode: m, text: mmss(s) } : null;
+};
 </script>
 
 <template>
@@ -69,19 +67,6 @@ const ovOf = k => a.value.override[k] || 'auto';
         Kontrol Aktuator
       </h2>
       <span class="text-xs text-muted">{{ state.isAdmin ? 'Kontrol remot via Firebase RTDB' : 'Hanya lihat — login untuk kontrol manual' }}</span>
-    </div>
-
-    <!-- Indikator mode manual: aktuator mana yang sedang di-override.
-         Override manual kedaluwarsa sendiri setelah 10 menit, jadi tidak ada
-         tombol "kembali ke auto" yang wajib ditekan. -->
-    <div
-      v-if="mi.any"
-      class="mb-3 rounded-lg border border-accent bg-accent-soft px-3 py-2 text-[11.5px] leading-snug text-accent-dark"
-    >
-      <b>Mode manual aktif</b>
-      <span v-if="mi.items.length"> — {{ mi.items.map(i => i.name + ' (' + i.mode + ')').join(', ') }}</span>
-      <span v-else> — aktuator yang di-override tidak dilaporkan perangkat</span>
-      <span class="block text-muted">Override expires sendiri setelah 10 menit, lalu aktuator kembali ke fuzzy.</span>
     </div>
 
     <!-- IRRIGOFF: irigasi otomatis sengaja dimatikan di perangkat (debit pompa
@@ -103,9 +88,8 @@ const ovOf = k => a.value.override[k] || 'auto';
       <b>Siklus irigasi ditahan</b> — {{ ig.holdReason }}
     </div>
 
-    <!-- Telemetri irigasi: dosis dari ETc, durasi pompa, jeda minimum, dan
-         progres siklus (anggaran harian vs terpakai hari ini).
-         disembunyikan kalau perangkat belum mengirimnya. -->
+    <!-- Telemetri irigasi: durasi pompa dan jeda minimum. Disembunyikan kalau
+         perangkat belum mengirimnya. -->
     <div
       v-if="igLine"
       class="mb-3 rounded-lg border border-border bg-card-2 px-3 py-2 text-[11px] leading-snug text-muted"
@@ -113,65 +97,75 @@ const ovOf = k => a.value.override[k] || 'auto';
       {{ igLine }}
     </div>
 
-    <div class="flex flex-col gap-2">
-      <div v-for="it in items" :key="it.key" class="flex items-center gap-2.5 rounded-lg border border-border bg-card-2 px-3.5 py-2.5">
-        <svg class="shrink-0 text-accent" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path v-for="(p, pi) in it.icon" :key="pi" :d="p.d" :transform="p.t" /></svg>
-        <div class="min-w-0">
-          <h3 class="whitespace-nowrap text-[13.5px] font-semibold">{{ it.label }}</h3>
-          <!-- Status aktuator (yang SEDANG berjalan) terpisah dari status
-               override — operator perlu tahu apa yang benar-benar jalan. -->
-          <span class="block text-[10.5px] text-muted">
-            {{ OV_TEXT[ovOf(it.key)] }}
-            <span class="opacity-70">· status {{ it.on ? 'MENYALA' : 'MATI' }}</span>
-          </span>
+    <div class="flex flex-col gap-2.5">
+      <div
+        v-for="it in items" :key="it.key"
+        class="relative rounded-lg border border-border bg-card-2 px-3.5 py-2.5"
+      >
+        <!-- Chip hitung mundur override, mengambang di tepi atas kartu. Muncul
+             hanya saat mode paksa DAN firmware mengirim sisa waktunya. -->
+        <span
+          v-if="chipOf(it.key)"
+          class="absolute -top-2 right-2.5 inline-flex items-center gap-1 rounded-full border border-warn-line bg-warn-soft px-2 py-[1px] text-[10px] font-bold tracking-wide text-warn"
+          :title="`Override ${chipOf(it.key).mode === 'on' ? 'paksa nyala' : 'paksa mati'} — sisa ${chipOf(it.key).text}`"
+        >
+          <svg class="max-[420px]:hidden" viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          OVERRIDE {{ chipOf(it.key).text }}
+        </span>
+
+        <div class="flex items-center gap-2.5">
+          <svg class="shrink-0 text-accent" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path v-for="(p, pi) in it.icon" :key="pi" :d="p.d" :transform="p.t" /></svg>
+
+          <div class="min-w-0">
+            <h3 class="whitespace-nowrap text-[13.5px] font-semibold">{{ it.label }}</h3>
+            <!-- Keluaran fuzzy. Disembunyikan (bukan "OFF") kalau firmware
+                 belum mengirim fuzzy_*: record lama tetap benar. -->
+            <span v-if="a.fuzzy[it.key] !== null" class="block text-[10.5px] text-muted">
+              FUZZY: {{ a.fuzzy[it.key] ? 'ON' : 'OFF' }}
+            </span>
+          </div>
+
+          <div class="ml-auto flex items-baseline gap-2.5">
+            <!-- Duty blower = keluaran fuzzy (PWM). -->
+            <span v-if="it.duty !== undefined && it.duty !== null" class="text-[11.5px] text-muted">Duty {{ Math.round(it.duty * 100) }} %</span>
+            <!-- Status besar = laporan perangkat (yang SEDANG berjalan), bukan
+                 mode. Irigasi bisa OFF di sini sementara mode masih ON: siklus
+                 sudah selesai, override belum dilepas. Itu benar. -->
+            <span class="text-[15px] font-bold" :class="it.on ? 'text-ok' : 'text-danger'">{{ it.on ? 'ON' : 'OFF' }}</span>
+          </div>
         </div>
 
-        <div class="ml-auto flex items-baseline gap-2.5">
-          <!-- Duty blower = keluaran fuzzy (PWM), huruf kecil di bawah status. -->
-          <span v-if="it.duty !== undefined && it.duty !== null" class="text-[11.5px] text-muted">Duty {{ Math.round(it.duty * 100) }} %</span>
-          <span class="text-[15px] font-bold" :class="it.on ? 'text-ok' : 'text-danger'">{{ it.on ? 'ON' : 'OFF' }}</span>
-
-          <!-- Sakelar hanya untuk admin. Kartu kontrol tetap terlihat untuk
-               semua orang (status ON/OFF berguna dipantau), tapi tanpa login
-               tidak boleh ada kontrol yang bisa diklik — sama seperti
-               `body.read-only .switch { display:none }` di style.css lama.
-               Penolakan sesungguhnya tetap di RTDB rules + sendCommand().
-
-               Posisi knob = kehendak operator: langsung bergerak saat diklik,
-               lalu menyesuaikan record perangkat. Warna track hanya nyala/mati
-               (mode dibawa teks subline di atas). Warna saja tidak terbaca
-               pembaca layar, jadi input diberi aria-label aksi berikutnya. -->
-          <label
-            v-if="state.isAdmin"
-            class="switch relative inline-block h-[18px] w-[34px] shrink-0 cursor-pointer"
-            :title="it.tip"
-          >
-            <input
-              type="checkbox" class="sr-only"
-              :checked="switchOn[it.key]"
-              :aria-label="`${it.label}: ${switchOn[it.key] ? 'matikan (paksa mati)' : 'nyalakan (paksa nyala)'}`"
-              @change="onSwitch(it.key, $event.target.checked)"
-            >
-            <span
-              class="absolute inset-0 rounded-full transition-colors duration-200"
-              :class="switchOn[it.key] ? 'bg-accent-dark' : 'bg-track'"
-            />
-            <span
-              class="absolute left-0.5 top-0.5 h-[14px] w-[14px] rounded-full bg-white transition-transform duration-200"
-              :class="switchOn[it.key] && 'translate-x-[16px]'"
-            />
-          </label>
+        <!-- Segmented tiga posisi, admin saja. Penolakan sesungguhnya tetap di
+             RTDB rules + sendCommand(). aria-pressed supaya mode terbaca
+             pembaca layar (warna saja tidak cukup). -->
+        <div
+          v-if="state.isAdmin"
+          class="mt-2 grid grid-cols-3 gap-1 rounded-lg border border-border bg-card p-1"
+          role="group"
+          :aria-label="`Mode ${it.label}`"
+        >
+          <button
+            v-for="m in MODES" :key="m.v" type="button"
+            class="rounded-md px-2 py-[3px] text-[11px] font-bold transition-colors"
+            :class="modes[it.key] === m.v ? m.cls : 'text-muted hover:bg-card-2'"
+            :aria-pressed="modes[it.key] === m.v"
+            :title="`${it.label}: ${m.tip}`"
+            @click="onSwitch(it.key, m.v)"
+          >{{ m.label }}</button>
         </div>
+
+        <p v-if="it.note" class="mt-1.5 text-[10.5px] leading-snug text-muted">{{ it.note }}</p>
       </div>
     </div>
 
-    <!-- "Kembali ke Auto" SELALU ada (admin): override dilepas untuk semua
-         aktuator sekaligus. Sakelar per aktuator hanya melepas override
-         aktuator itu. -->
+    <p v-if="!state.isAdmin" class="mt-3 text-center text-[11px] text-muted">Status ON/OFF = laporan perangkat.</p>
+
+    <!-- "Kembali ke Auto" = aksi semua-sekaligus; gayanya sekunder karena
+         segmented per aktuator sudah cukup untuk kerja sehari-hari. -->
     <button
       v-if="state.isAdmin"
       type="button"
-      class="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-[12.5px] font-semibold text-ink hover:bg-card-2 disabled:opacity-50"
+      class="mt-3 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-[12.5px] font-semibold text-muted hover:bg-card-2 hover:text-ink disabled:opacity-50"
       title="Lepas override manual semua aktuator — semua kembali ke fuzzy"
       @click="releaseAll()"
     >
