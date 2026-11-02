@@ -1,9 +1,11 @@
 # Secrets (never commit)
 firmware/src/secrets.h
 firmware_old/src/secrets.h
-# web/public/config.js SENGAJA di-commit: apiKey Firebase bukan hard secret,
-# yang melindungi data adalah RTDB rules. Kalau di-ignore, hasil build tidak
-# punya config dan dashboard mati saat deploy. Lihat AGENTS.md § Secrets.
+
+# Dashboard lama, diarsipkan di luar repo (sudah pindah ke smartgh-manager).
+# Kurung siku harus di-escape: [ARSIP] adalah character class git, tanpa
+# backslash polanya justru meng-ignore folder "Aweb/".
+\[ARSIP\]web/
 
 # Firmware uji coba lokal (bukan bagian repo)
 hw_test/
@@ -19,10 +21,7 @@ firmware/tools/out/
 .clangd/
 compile_commands.json
 node_modules/
-web/dist/
 
-# Dokumentasi internal tim (setup RTDB, rules, deploy), bukan untuk repo/deploy
-web/TUTORIAL.md
 
 # Audit internal + listing direktori leftovers
 audit-smart-greenhouse.md
@@ -38,8 +37,6 @@ dir.txt
 AGENTS.md
 opencode.json
 
-# Backup rules RTDB lokal (jaring pengaman sebelum publish)
-web/rules_rtdb.bak
 
 # Pipeline keseluruhan proyek (lokal, bukan untuk repo/deploy)
 PIPELINE.md
