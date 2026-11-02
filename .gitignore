@@ -1,11 +1,5 @@
 # Secrets (never commit)
 firmware/src/secrets.h
-firmware_old/src/secrets.h
-
-# Dashboard lama, diarsipkan di luar repo (sudah pindah ke smartgh-manager).
-# Kurung siku harus di-escape: [ARSIP] adalah character class git, tanpa
-# backslash polanya justru meng-ignore folder "Aweb/".
-\[ARSIP\]web/
 
 # Firmware uji coba lokal (bukan bagian repo)
 hw_test/
@@ -20,39 +14,9 @@ firmware/tools/out/
 .vscode/
 .clangd/
 compile_commands.json
-node_modules/
-
-
-# Audit internal + listing direktori leftovers
-audit-smart-greenhouse.md
-dir.txt
 
 # Lock file OnlyOffice
 .~lock*#
 
-# Plugin OpenCode lokal (state per mesin)
-.opencode/plugins/
-
-# OpenCode & instrucciones lokal (state per mesin)
+# Konteks proyek bersama: symlink ke ../AGENTS.md di folder Capstone
 AGENTS.md
-opencode.json
-
-
-# Pipeline keseluruhan proyek (lokal, bukan untuk repo/deploy)
-PIPELINE.md
-
-# Desain 3D panel box (OpenSCAD + STL, lokal)
-design/
-
-# Capstone documents (not versioned)
-Asset/
-Dokumen_Pendukung/
-Laporan/
-Naskah_Publikasi/
-Panduan/
-Referensi/
-*.pdf
-*.odt
-*.docx
-*.ris
-cap.html
