@@ -26,14 +26,20 @@ static uint32_t nowEpoch() {
     return (now >= 100000) ? (uint32_t)now : 0;
 }
 
-static uint32_t elapsedSec() {
+// known=false: penghitung berbasis epoch tapi jam belum sinkron. Uptime BUKAN
+// pengganti yang sah di kondisi itu (angkanya mulai dari nol tiap boot).
+static uint32_t elapsedSec(bool* known) {
     if (s_startEpoch >= 100000) {
         uint32_t now = nowEpoch();
         if (now >= 100000) {
+            *known = true;
             // clamp ke UINT32_MAX (now selalu >= epoch secara wajar)
             return (now >= s_startEpoch) ? (now - s_startEpoch) : 0;
         }
+        *known = false;
+        return 0;
     }
+    *known = true;
     if (s_startUs == 0) return 0;
     int64_t d = esp_timer_get_time() - s_startUs;
     if (d < 0) return 0;
@@ -113,7 +119,10 @@ void phaseSetDuration(uint32_t seconds) {
     s_startEpoch = startEpoch;
     unlock();
     prefs.putULong("ph_dur", seconds);
-    prefs.putULong("ph_epoch", startEpoch);
+    // Jangan pernah menulis ph_epoch = 0: nilai itu membuat elapsedSec()
+    // selamanya jatuh ke uptime, jadi penghitung mulai dari nol tiap boot.
+    // phaseGet() akan menstempel epoch begitu jam tersedia.
+    if (startEpoch != 0) prefs.putULong("ph_epoch", startEpoch);
 }
 
 void phaseReset() {
@@ -122,7 +131,7 @@ void phaseReset() {
     s_startUs = esp_timer_get_time();
     s_startEpoch = startEpoch;
     unlock();
-    prefs.putULong("ph_epoch", startEpoch);
+    if (startEpoch != 0) prefs.putULong("ph_epoch", startEpoch);
 }
 
 bool phaseActive() {
@@ -147,6 +156,24 @@ float phaseKc() {
 }
 
 PhaseState phaseGet() {
+    // Penambal sekali jalan: NVS perangkat lama bisa berisi ph_epoch = 0
+    // karena durasi di-set sebelum jam sinkron. Begitu jam tersedia, stempel
+    // sekarang supaya penghitung tidak lagi jatuh ke uptime tiap boot.
+    lock();
+    bool perluStempel = (s_startEpoch == 0);
+    unlock();
+    if (perluStempel) {
+        uint32_t now = nowEpoch();
+        if (now >= 100000) {
+            lock();
+            if (s_startEpoch == 0) s_startEpoch = now;
+            unlock();
+            prefs.putULong("ph_epoch", now);   // NVS di luar lock
+            Serial.printf("[fase] ph_epoch 0 diperbaiki -> %lu (penghitung tidak reset tiap boot)\n",
+                          (unsigned long)now);
+        }
+    }
+
     PhaseState st;
     lock();
     st.active = s_active;
@@ -155,10 +182,12 @@ PhaseState phaseGet() {
     st.name[PHASE_NAME_LEN - 1] = '\0';
     st.kc = phaseKcUnlocked();
     st.durationSec = s_durationSec;
-    uint32_t el = elapsedSec();
+    bool known = true;
+    uint32_t el = elapsedSec(&known);
     if (s_durationSec > 0 && el > s_durationSec) el = s_durationSec;
     st.elapsedSec = el;
     st.remainingSec = (s_durationSec > el) ? (s_durationSec - el) : 0;
+    st.clockOk = known;
     unlock();
     return st;
 }

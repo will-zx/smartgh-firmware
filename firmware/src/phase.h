@@ -15,6 +15,7 @@ struct PhaseState {
     uint32_t durationSec;                // durasi fase (detik); 0 = tanpa batas
     uint32_t elapsedSec;                 // sudah berjalan sejak durasi di-set (detik); bertahan setelah power loss bila NTP sudah sync
     uint32_t remainingSec;               // sisa durasi (detik); 0 bila tanpa batas/habis
+    bool     clockOk;                    // false = jam belum sinkron tapi penghitung berbasis epoch -> elapsed/remaining tidak diketahui
 };
 
 void  phaseInit();                    // muat setelan dari NVS — panggil di setup()

@@ -303,8 +303,14 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
     doc["vpd_target"] = phase.vpdTarget;
     doc["fase_aktif"] = phase.active;
     doc["fase_durasi_s"] = phase.durationSec;
-    doc["fase_elapsed_s"] = phase.elapsedSec;
-    doc["fase_sisa_s"] = phase.remainingSec;
+    // elapsed/sisa hanya dikirim bila penghitungnya benar-benar diketahui.
+    // Jam belum sinkron + penghitung berbasis epoch -> 0 palsu akan terbaca
+    // "fase baru mulai"; lebih baik field-nya absen (dashboard menampilkan
+    // "menunggu sinkronisasi jam").
+    if (phase.clockOk) {
+        doc["fase_elapsed_s"] = phase.elapsedSec;
+        doc["fase_sisa_s"] = phase.remainingSec;
+    }
     // Kc fase aktif (Tabel 2.1 proposal) + Tmean yang dipakai menghitung ETc
     // (pendekatan praktis, bukan ETo standar FAO-56).
     doc["kc_aktif"] = phase.kc;
