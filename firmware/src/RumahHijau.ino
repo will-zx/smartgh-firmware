@@ -488,7 +488,10 @@ static void netTask(void* arg) {
 
         if (WiFi.status() == WL_CONNECTED && now - lastCmd >= DB_POLL_MS) {
             lastCmd = now;
+            unsigned long pollStarted = millis();
             pollCommands();
+            Serial.printf("[fb][diag] netTask pollCommands elapsed_ms=%lu\n",
+                          (unsigned long)(millis() - pollStarted));
         }
 
         // Push telemetry SELALU (bukan hanya saat sensor valid): status

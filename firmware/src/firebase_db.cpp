@@ -226,6 +226,7 @@ static bool httpPost(const String& path, const String& body) {
     http.addHeader("Content-Type", "application/json");
     int code = http.POST(body);
     http.end();
+    Serial.printf("[fb][diag] POST HTTP %d\n", code);
     if (code == 401) invalidateToken();   // token expired/kadaluarsa
     return code >= 200 && code < 300;
 }
@@ -337,6 +338,7 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
     if (WiFi.status() != WL_CONNECTED) return false;
 
     bool ok = httpPost(LOGS_PATH, body);
+    Serial.printf("[fb][diag] sensor POST result=%s\n", ok ? "accepted" : "failed");
     if (!ok) Serial.println("[fb] push log gagal (akan diantrekan ke SD)");
     return ok;
 }
@@ -354,13 +356,20 @@ static void applyActuator(uint8_t bit, int8_t mode, bool on) {
 }
 
 void pollCommands() {
-    if (WiFi.status() != WL_CONNECTED) return;
-    if (!ensureToken()) return;
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("[fb][diag] commands GET skipped: WiFi disconnected");
+        return;
+    }
+    if (!ensureToken()) {
+        Serial.println("[fb][diag] commands GET skipped: token unavailable");
+        return;
+    }
 
     client.setInsecure();
     String url = String(FIREBASE_DB_URL) + "/commands/" + DEVICE_ID + ".json?auth=" + idToken;
     http.begin(client, url);
     int code = http.GET();
+    Serial.printf("[fb][diag] commands GET HTTP %d\n", code);
     if (code != 200) {
         if (code == 401) invalidateToken();
         http.end();
@@ -368,12 +377,19 @@ void pollCommands() {
     }
     String payload = http.getString();
     http.end();
-    if (payload == "null" || payload == "{}") return;
+    if (payload == "null" || payload == "{}") {
+        Serial.println("[fb][diag] commands parsed count=0");
+        return;
+    }
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload);
     JsonObject cmds = doc.as<JsonObject>();
-    if (err || cmds.size() == 0) return;
+    if (err || cmds.size() == 0) {
+        Serial.printf("[fb][diag] commands parse failed=%s count=0\n", err ? err.c_str() : "empty");
+        return;
+    }
+    Serial.printf("[fb][diag] commands parsed count=%u\n", (unsigned)cmds.size());
 
     // Dashboard mengirim perintah dengan POST ke parent, jadi key adalah
     // push-ID Firebase yang dibuat server dan terurut leksikografis. Jangan
@@ -392,18 +408,29 @@ void pollCommands() {
         // Lewati key yang bukan objek perintah. Node /commands bisa tercemar
         // field "action"/"value" tingkat node (hasil PUT ke /commands/{id}.json
         // alih-alih POST ke anaknya); key seperti itu bukan perintah.
-        if (!kv.value().is<JsonObject>()) continue;
+        if (!kv.value().is<JsonObject>()) {
+            Serial.printf("[fb][diag] command skipped key=%s reason=not_object\n", kv.key().c_str());
+            continue;
+        }
         const char* k = kv.key().c_str();
-        if (lastCmdKey.length() && strcmp(k, lastCmdKey.c_str()) <= 0) continue;
+        if (lastCmdKey.length() && strcmp(k, lastCmdKey.c_str()) <= 0) {
+            Serial.printf("[fb][diag] command skipped key=%s reason=lastCmdKey last=%s\n",
+                          k, lastCmdKey.c_str());
+            continue;
+        }
         if (oldest == nullptr || strcmp(k, oldest) < 0) {
             oldest = k;
             target = kv.value().as<JsonObject>();
         }
     }
 
-    if (oldest == nullptr) return;   // semua perintah sudah pernah dijalankan
+    if (oldest == nullptr) {
+        Serial.println("[fb][diag] no eligible command after lastCmdKey");
+        return;
+    }
 
     const char* action = target["action"] | "";
+    Serial.printf("[fb][diag] selected key=%s action=%s\n", oldest, action);
     JsonVariant value = target["value"];
     bool on = value | false;
     bool isRestart = strcmp(action, "restart") == 0;
@@ -487,6 +514,8 @@ void pollCommands() {
         Serial.printf("[fb] perintah diterima: %s %s\n", action, modeLog);
     }
 
+    Serial.printf("[fb][diag] apply dispatch complete key=%s action=%s\n", oldest, action);
+
     // Tandai selesai dengan menghapus entri. WAJIB sebelum restart — kalau tidak,
     // entri masih ada saat boot dan device restart lagi tanpa henti.
     client.setInsecure();
@@ -495,6 +524,7 @@ void pollCommands() {
     http.begin(client, delUrl);
     int delCode = http.sendRequest("DELETE", "");
     http.end();
+    Serial.printf("[fb][diag] commands DELETE key=%s HTTP %d\n", oldest, delCode);
 
     // Penanda lokal (NVS): perintah ini sudah dijalankan, jangan diulang walau
     // DELETE gagal karena jaringan atau aturan yang belum diperbarui.
