@@ -2,6 +2,7 @@
 #define CONTROL_H
 
 #include <Arduino.h>
+#include <stdint.h>
 
 // ponytail: 3 aktuator = 1 bitmask, bukan 3 bool terpisah. Tambah aktuator
 // ke-4 cukup satu bit lagi; kalau prosesnya makin banyak (>8), ganti struct.
@@ -38,5 +39,6 @@ void controlForce(uint8_t bit, int8_t mode);
 void controlApply(bool* mist, bool* irigasi, bool* blower, float* blowerLevel = nullptr);
 bool controlIsManual();
 OverrideState controlOverrides();   // status override saat ini (untuk telemetri)
+uint32_t controlIrrigationRequestId(); // bertambah tiap perintah eksplisit irigasi ON
 
 #endif

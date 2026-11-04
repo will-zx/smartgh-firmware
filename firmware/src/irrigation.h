@@ -2,6 +2,7 @@
 #define IRRIGATION_H
 
 #include <Arduino.h>
+#include <stdint.h>
 
 // Siklus irigasi: IDLE -> DIST -> IDLE. Satu pompa (DIST) menarik air langsung
 // dari penampungan utama; durasinya = dosis ETc, lalu berhenti sendiri.
@@ -50,12 +51,9 @@ IrrigStatus irrigationStatus();
 // Permintaan yang ditahan (mis. jeda minimum belum lewat) dicoba ulang
 // otomatis pada iterasi berikutnya selama trigger tetap true.
 //
-// manual = override operator memaksa irigasi nyala. Perintah eksplisit itu
-// boleh menembus jeda minimum & anggaran harian - TAPI hanya SATU siklus per
-// permintaan manual (sakelar harus dimatikan lalu dinyalakan lagi). Tanpa
-// batas ini, trigger manual yang tetap true akan membuat pompa menyala
-// terus-menerus.
-void irrigationUpdate(bool trigger, bool manual);
+// manualRequestId bertambah pada setiap perintah ON eksplisit; tiap ID baru
+// memulai satu siklus manual (termasuk ON berulang tanpa melepas override).
+void irrigationUpdate(bool trigger, bool manual, uint32_t manualRequestId);
 bool irrigationRunning();         // ada fase aktif (dipakai status_sistem)
 void irrigationAbort();           // sensor tidak valid / darurat -> pompa mati
 

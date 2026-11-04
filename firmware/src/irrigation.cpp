@@ -53,12 +53,8 @@ static void persistBudget() {
     prefsIrig.putULong("used_day", usedDayIndex);
 }
 
-// Permintaan manual: sakelar operator dinyalakan (turun = override dilepas).
-// prevManual dipakai untuk mengenali permintaan BARU; manualRequestUsed
-// memastikan satu permintaan manual hanya menghasilkan satu siklus, supaya
-// pompa tidak menyala terus-menerus selama override menyala.
-static bool          prevManual = false;
-static bool          manualRequestUsed = false;
+// ID permintaan manual terakhir yang sudah menghasilkan satu siklus.
+static uint32_t      lastManualRequestId = 0;
 
 // ==== Tmean: rata-rata suhu sliding (ember 1 menit x 180 ember = 3 jam) ====
 // FAO-56 menetapkan Penman-Monteith sebagai metode ETo standar; Blaney-
@@ -162,21 +158,25 @@ unsigned long irrigationMinIntervalMs() {
 static unsigned long currentDayIndex() {
     time_t t = time(nullptr);
     if (t >= 100000) return (unsigned long)((t + 7 * 3600) / 86400);
-    return 0x40000000UL + (millis() / 86400000UL);
+    return 0;  // tanpa NTP jangan ubah anggaran tersimpan berdasarkan uptime
 }
 
 static void budgetRollOver() {
     loadBudget();
     unsigned long day = currentDayIndex();
+    if (day == 0) return;  // konservatif sampai epoch valid; hindari reset ganda saat NTP sinkron
     if (!usedDayInit) {
         usedDayInit = true;
-        // Hari tersimpan sama = lanjutkan pemakaian; beda/kosong = mulai baru.
-        if (usedDayIndex != day) usedMl = 0.0f;
-        usedDayIndex = day;
+        // Jangan menghapus anggaran tersimpan bila NTP kembali ke hari lama.
+        // Hari kosong atau hari yang maju = mulai anggaran baru.
+        if (usedDayIndex == 0 || day > usedDayIndex) {
+            usedMl = 0.0f;
+            usedDayIndex = day;
+        }
         persistBudget();
         return;
     }
-    if (day != usedDayIndex) {
+    if (day > usedDayIndex) {
         usedDayIndex = day;
         usedMl = 0.0f;
         persistBudget();
@@ -242,15 +242,12 @@ static void startDist(unsigned long now) {
     Serial.printf("irigasi: fase %s\n", irrigationPhaseName());
 }
 
-void irrigationUpdate(bool trigger, bool manual) {
+void irrigationUpdate(bool trigger, bool manual, uint32_t manualRequestId) {
     unsigned long now = millis();
     budgetRollOver();
+    // OFF/Auto membatalkan permintaan manual yang belum sempat dijalankan.
+    if (!manual) lastManualRequestId = manualRequestId;
 
-    // Permintaan manual BARU = sakelar operator baru dinyalakan. Override
-    // yang dilepas (manual false) membuka permintaan manual berikutnya.
-    bool manualNew = manual && !prevManual;
-    prevManual = manual;
-    if (!manual) manualRequestUsed = false;
 
     // Syarat memulai siklus: trigger true DAN jeda minimum sudah lewat DAN
     // (terkumpul + dosis <= anggaran harian).
@@ -266,7 +263,7 @@ void irrigationUpdate(bool trigger, bool manual) {
 
         bool budgetFull    = (usedMl + dose > budget + 0.5f);
         bool intervalShort = hasCycle && (now - lastCycleStartMs) < irrigationMinIntervalMs();
-        bool manualAllow   = manual && manualNew && !manualRequestUsed;
+        bool manualAllow   = manual && manualRequestId != lastManualRequestId;
 
         if (dose <= 0.0f || doseMs == 0UL) {
             setHoldReason("ETc belum tersedia");
@@ -289,7 +286,9 @@ void irrigationUpdate(bool trigger, bool manual) {
                 Serial.println("[irigasi] override manual: siklus jalan di luar "
                                "jeda/anggaran (niat operator)");
             }
-            if (manualAllow) manualRequestUsed = true;
+            // Konsumsi tepat satu ID; ON yang masuk saat siklus berjalan tetap
+            // menjadi permintaan tertunda untuk siklus berikutnya.
+            if (manualAllow) lastManualRequestId++;
             setHoldReason("");
             cycleDoseMs = doseMs;
             cycleDoseMl = dose;

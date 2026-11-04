@@ -2,7 +2,7 @@
 #include "config.h"
 #include "control.h"
 #include "phase.h"
-#include "irrigation.h"   // irrigationAbort(): mode "off" pada irigasi
+#include "irrigation.h"   // IrrigStatus untuk telemetri
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
@@ -195,7 +195,11 @@ static void loadRestartState() {
     restartStateLoaded = true;
     prefsCmd.begin("smartgh_cmd", true);
     lastRestartEpoch = (time_t)prefsCmd.getULong("last_restart", 0);
+    bool pending = prefsCmd.getBool("restart_pending", false);
     prefsCmd.end();
+    // Tanpa epoch NTP, monotonic millis tidak bertahan melewati reboot.
+    // Mulai cooldown konservatif dari boot bila restart sebelumnya tersimpan.
+    if (pending && lastRestartEpoch < 100000) lastRestartMs = millis();
 }
 
 static bool restartBlocked() {
@@ -204,7 +208,13 @@ static bool restartBlocked() {
     if (now >= 100000 && lastRestartEpoch > 0) {
         return (now - lastRestartEpoch) < (time_t)(RESTART_COOLDOWN_MS / 1000UL);
     }
-    return lastRestartMs != 0 && (millis() - lastRestartMs) < RESTART_COOLDOWN_MS;
+    bool blocked = lastRestartMs != 0 && (millis() - lastRestartMs) < RESTART_COOLDOWN_MS;
+    if (!blocked) {
+        prefsCmd.begin("smartgh_cmd", false);
+        prefsCmd.putBool("restart_pending", false);
+        prefsCmd.end();
+    }
+    return blocked;
 }
 
 static void markRestart() {
@@ -212,6 +222,7 @@ static void markRestart() {
     lastRestartEpoch = time(nullptr);
     prefsCmd.begin("smartgh_cmd", false);
     prefsCmd.putULong("last_restart", (unsigned long)lastRestartEpoch);
+    prefsCmd.putBool("restart_pending", true);
     prefsCmd.end();
 }
 
@@ -452,9 +463,8 @@ void pollCommands() {
         applyActuator(C_MIST, mode, on);
     } else if (strcmp(action, "irigasi") == 0) {
         applyActuator(C_IRIG, mode, on);
-        // Mode "off" harus benar-benar menghentikan pompa: tanpa abort, state
-        // machine DIST terus memutar pompa walau sakelar OFF.
-        if (mode == 0) irrigationAbort();
+        // controlTask melihat override OFF lalu meng-abort siklus di task
+        // pemilik state irigasi; jangan mengubah state/GPIO dari netTask.
     } else if (strcmp(action, "blower") == 0) {
         applyActuator(C_BLOWER, mode, on);
     } else if (strcmp(action, "set_vpd") == 0) {

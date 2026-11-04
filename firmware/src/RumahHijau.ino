@@ -356,8 +356,8 @@ static void controlTask(void* arg) {
         } else {
             // manual = override operator memaksa irigasi nyala (ov.irig == 1).
             // Perintah eksplisit itu boleh menembus jeda & anggaran harian,
-            // tapi hanya satu siklus per permintaan manual.
-            irrigationUpdate(irigasi, ov.irig == 1);
+            // tapi hanya satu siklus untuk setiap perintah ON manual.
+            irrigationUpdate(irigasi, ov.irig == 1, controlIrrigationRequestId());
         }
         bool irigasiRunning = irrigationRunning();
         IrrigStatus irig = irrigationStatus();

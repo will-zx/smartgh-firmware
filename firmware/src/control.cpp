@@ -14,6 +14,7 @@
 static SemaphoreHandle_t mux = nullptr;
 static int8_t      ovMist = -1, ovIrig = -1, ovBlower = -1;
 static unsigned long tMist = 0, tIrig = 0, tBlower = 0;   // millis override aktif
+static uint32_t irrigationRequestId = 0;
 
 static void lock()   { if (mux) xSemaphoreTake(mux, portMAX_DELAY); }
 static void unlock() { if (mux) xSemaphoreGive(mux); }
@@ -62,7 +63,10 @@ void controlForce(uint8_t bit, int8_t mode) {
     unsigned long stamp = (mode == -1) ? 0 : millis();
     const char* nama = "";
     if (bit & C_MIST)   { ovMist = mode; tMist = stamp; nama = "misting"; }
-    if (bit & C_IRIG)   { ovIrig = mode; tIrig = stamp; nama = "irigasi"; }
+    if (bit & C_IRIG)   {
+        ovIrig = mode; tIrig = stamp; nama = "irigasi";
+        if (mode == 1) irrigationRequestId++;
+    }
     if (bit & C_BLOWER) { ovBlower = mode; tBlower = stamp; nama = "blower"; }
     unlock();
     Serial.printf("[ctl] override %s -> %s\n", nama,
@@ -118,4 +122,11 @@ OverrideState controlOverrides() {
     };
     unlock();
     return ov;
+}
+
+uint32_t controlIrrigationRequestId() {
+    lock();
+    uint32_t id = irrigationRequestId;
+    unlock();
+    return id;
 }
