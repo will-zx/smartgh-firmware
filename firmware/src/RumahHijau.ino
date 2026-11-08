@@ -1,3 +1,5 @@
+#include <esp_wpa2.h>
+#include <esp_wifi.h>
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_task_wdt.h>
@@ -116,27 +118,98 @@ static const char* resetReasonName(esp_reset_reason_t r) {
 
 // ==== WiFi ====
 static unsigned long lastReconnect = 0;
+static bool enterpriseConfigured = false;
 
 void connectWiFi() {
+    // Initialize WiFi in STA mode before configuring WPA2 Enterprise
+    WiFi.mode(WIFI_STA);
+    // Ensure any previous connection is cleared
+    WiFi.disconnect(true);
+    // Set power and disable sleep
     WiFi.setTxPower(WIFI_POWER_11dBm);
-    // Modem-sleep bikin handshake TLS sering putus (SSL EOF) di AP tertentu.
     WiFi.setSleep(false);
-    Serial.print("Connecting to WiFi");
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+
+
+    if (!enterpriseConfigured) {
+        Serial.println("[wifi] configuring WPA2 Enterprise PEAP...");
+
+        esp_err_t err;
+
+        err = esp_wifi_sta_wpa2_ent_set_identity(
+            (uint8_t*)WIFI_IDENTITY,
+            strlen(WIFI_IDENTITY)
+        );
+
+        if (err != ESP_OK) {
+            Serial.printf("[wifi] identity error: %s\n",
+                          esp_err_to_name(err));
+            return;
+        }
+
+        err = esp_wifi_sta_wpa2_ent_set_username(
+            (uint8_t*)WIFI_USERNAME,
+            strlen(WIFI_USERNAME)
+        );
+
+        if (err != ESP_OK) {
+            Serial.printf("[wifi] username error: %s\n",
+                          esp_err_to_name(err));
+            return;
+        }
+
+        err = esp_wifi_sta_wpa2_ent_set_password(
+            (uint8_t*)WIFI_PASSWORD,
+            strlen(WIFI_PASSWORD)
+        );
+
+        if (err != ESP_OK) {
+            Serial.printf("[wifi] password error: %s\n",
+                          esp_err_to_name(err));
+            return;
+        }
+
+        err = esp_wifi_sta_wpa2_ent_enable();
+
+        if (err != ESP_OK) {
+            Serial.printf("[wifi] enterprise enable error: %s\n",
+                          esp_err_to_name(err));
+            return;
+        }
+
+        enterpriseConfigured = true;
+
+        Serial.println("[wifi] PEAP/MSCHAPV2 configured");
+    }
+
+    Serial.printf("[wifi] connecting to %s", WIFI_SSID);
+
+    WiFi.begin(WIFI_SSID);
+
     unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT) {
+
+    while (WiFi.status() != WL_CONNECTED &&
+           millis() - start < WIFI_TIMEOUT) {
+
         vTaskDelay(pdMS_TO_TICKS(100));
         Serial.print(".");
     }
+
     if (WiFi.status() == WL_CONNECTED) {
-        Serial.println(" Connected!");
-        Serial.print("SSID: ");
+        Serial.println("\n[wifi] connected!");
+
+        Serial.print("[wifi] SSID: ");
         Serial.println(WiFi.SSID());
-        Serial.print("IP: ");
+
+        Serial.print("[wifi] IP: ");
         Serial.println(WiFi.localIP());
+
+        Serial.print("[wifi] Gateway: ");
+        Serial.println(WiFi.gatewayIP());
+
     } else {
-        Serial.println(" WiFi timeout, continuing offline");
+        Serial.println("\n[wifi] connection timeout, offline mode");
     }
+
     lastReconnect = millis();
 }
 
