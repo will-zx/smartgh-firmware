@@ -34,7 +34,7 @@
 #define I2C_SDA         21
 #define I2C_SCL         22
 #define LCD_ADDR        0x27
-#define LCD_COLS        20
+#define LCD_COLS        16
 #define LCD_ROWS        4
 
 // Aktuator via modul XY-MOS 400W (umumnya AKTIF-HIGH: HIGH = ON).
@@ -190,8 +190,8 @@ static const float SUN_P_MONTH[12] = {
 //   3) isi SOIL_DRY_CAL = bacaan kering, SOIL_WET_CAL = bacaan basah
 //      (kering selalu > basah karena ADC terbalik; kalau tidak, kabel tertukar)
 // ponytail: angka awal masih asumsi v1.2 (2644/1200); ukur ulang per probe.
-#define SOIL_DRY_CAL    {2644, 2644, 2644}
-#define SOIL_WET_CAL    {1200, 1200, 1200}
+#define SOIL_DRY_CAL    {2509, 3231, 3255}
+#define SOIL_WET_CAL    {913, 1012, 1050}
 // Toleransi raw ADC di luar titik kalibrasi. Probe dicabut -> ADC mengambang
 // (0 atau 4095) -> di luar rentang ini -> ditandai tidak valid (bukan 100 %
 // basah / 0 % kering palsu). Angka ini hanya "jaring pengaman", bukan kalibrasi.

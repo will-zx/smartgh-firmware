@@ -41,19 +41,18 @@ void initLcd() {
 // Baris 0-2 saja. Baris 4 ditulis task scroll (lcdScrollTask).
 void updateLcd(float temp, float humidity, float soilMoisture, float vpd,
                float etc) {
-    char l0[24], l1[24], l2[24];
-    char t[12], h[12], s[12], v[12], e[12];
-    fmtVal(t, sizeof(t), temp, 1, "C");
-    fmtVal(h, sizeof(h), humidity, 1, "%");
-    fmtVal(s, sizeof(s), soilMoisture, 1, "%");
-    fmtVal(v, sizeof(v), vpd, 2, "");
-    fmtVal(e, sizeof(e), etc, 1, "mm");
-    snprintf(l0, sizeof(l0), "Suhu %s RH %s", t, h);
-    snprintf(l1, sizeof(l1), "Soil %s VPD %s", s, v);
-    snprintf(l2, sizeof(l2), "ETc %s", e);
-    lcdLine(0, l0);
-    lcdLine(1, l1);
-    lcdLine(2, l2);
+    // Hanya tampilkan VPD dan ETc pada baris pertama, baris kedua ditangani oleh scroll (status & error).
+    char line0[24];
+    char vStr[12];
+    char eStr[12];
+    fmtVal(vStr, sizeof(vStr), vpd, 2, "");
+    fmtVal(eStr, sizeof(eStr), etc, 1, "mm");
+    // Contoh tampilan: "VPD1.23 ETc12.3"
+    snprintf(line0, sizeof(line0), "VPD%s ETc%s", vStr, eStr);
+    lcdLine(0, line0);
+    // Bersihkan baris berikutnya agar tidak ada sisa teks lama.
+    lcdLine(1, "");
+    lcdLine(2, "");
 }
 
 void lcdScrollSetStatus(const char* status) {
