@@ -51,8 +51,8 @@ void updateLcd(float temp, float humidity, float soilMoisture, float vpd,
     snprintf(line0, sizeof(line0), "VPD%s ETc%s", vStr, eStr);
     lcdLine(0, line0);
     // Bersihkan baris berikutnya agar tidak ada sisa teks lama.
-    lcdLine(1, "");
     lcdLine(2, "");
+    lcdLine(3, "");
 }
 
 void lcdScrollSetStatus(const char* status) {
@@ -123,7 +123,7 @@ static void lcdScrollTask(void* arg) {
         // "shown" ditandai hanya kalau tulis sukses, supaya lock yang gagal
         // dicoba lagi di tick berikutnya.
         if (strcmp(win, shown) != 0 && i2cLock(pdMS_TO_TICKS(50))) {
-            lcd.setCursor(0, LCD_ROWS - 1);
+            lcd.setCursor(0, 1);
             lcd.print(win);
             i2cUnlock();
             snprintf(shown, sizeof(shown), "%s", win);
