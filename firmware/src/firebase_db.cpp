@@ -9,6 +9,7 @@
 #include <ArduinoJson.h>
 #include <Preferences.h>
 #include <time.h>
+#include <string.h>
 
 static WiFiClientSecure client;
 static HTTPClient http;
@@ -188,6 +189,49 @@ static void loadLastCmd() {
     // BISA lebih besar dari semua push ID asli -> high-water mark rusak dan
     // semua perintah berikutnya ikut terabaikan.
     if (lastCmdKey.length() < 10) lastCmdKey = "";
+}
+
+// Timestamp Firebase push-ID tersimpan di 8 karakter pertama.
+static bool pushKeyTimestampMs(const char* key, uint64_t* timestamp) {
+    static const char alphabet[] = "-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz";
+    if (!key || strlen(key) < 8) return false;
+    uint64_t value = 0;
+    for (int i = 0; i < 8; i++) {
+        const char* digit = strchr(alphabet, key[i]);
+        if (!digit) return false;
+        value = (value << 6) | (uint64_t)(digit - alphabet);
+    }
+    *timestamp = value;
+    return true;
+}
+
+// Penanda lama dari key buatan browser bisa berada jauh di masa depan, lalu
+// membuat seluruh push-ID server yang benar dianggap sudah diproses. Saat itu
+// antrean yang sudah berumur >1 menit dijadikan baseline, bukan dieksekusi ulang.
+static void repairFutureLastCmd(JsonObject cmds) {
+    if (!lastCmdKey.length()) return;
+    time_t now = time(nullptr);
+    uint64_t savedMs;
+    if (now < 100000 || !pushKeyTimestampMs(lastCmdKey.c_str(), &savedMs) ||
+        savedMs <= ((uint64_t)now + 300) * 1000ULL) return;
+
+    const char* newestStale = nullptr;
+    uint64_t staleBefore = (uint64_t)now * 1000ULL;
+    if (staleBefore > 60000ULL) staleBefore -= 60000ULL;
+    for (JsonPair kv : cmds) {
+        if (!kv.value().is<JsonObject>()) continue;
+        const char* key = kv.key().c_str();
+        uint64_t queuedMs;
+        if (!pushKeyTimestampMs(key, &queuedMs) || queuedMs >= staleBefore) continue;
+        if (!newestStale || strcmp(key, newestStale) > 0) newestStale = key;
+    }
+
+    lastCmdKey = newestStale ? newestStale : "";
+    prefsCmd.begin("smartgh_cmd", false);
+    prefsCmd.putString("last_cmd", lastCmdKey);
+    prefsCmd.end();
+    Serial.printf("[fb] lastCmdKey masa depan dipulihkan; baseline=%s (perintah lama dilewati)\n",
+                  lastCmdKey.length() ? lastCmdKey.c_str() : "kosong");
 }
 
 static void loadRestartState() {
@@ -414,6 +458,7 @@ void pollCommands() {
     // gagal. Push-ID terurut leksikografis, jadi cukup simpan key tertinggi
     // yang sudah dieksekusi; key <= itu dianggap sudah selesai.
     loadLastCmd();
+    repairFutureLastCmd(cmds);
     const char* oldest = nullptr;
     JsonObject target;    for (JsonPair kv : cmds) {
         // Lewati key yang bukan objek perintah. Node /commands bisa tercemar
