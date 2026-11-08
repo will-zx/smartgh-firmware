@@ -124,7 +124,7 @@ void connectWiFi() {
     // Initialize WiFi in STA mode before configuring WPA2 Enterprise
     WiFi.mode(WIFI_STA);
     // Ensure any previous connection is cleared
-    WiFi.disconnect(true);
+    WiFi.disconnect(false);
     // Set power and disable sleep
     WiFi.setTxPower(WIFI_POWER_11dBm);
     WiFi.setSleep(false);
