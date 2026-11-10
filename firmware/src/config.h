@@ -7,6 +7,14 @@
 #define WIFI_TIMEOUT    15000
 #define WIFI_RETRY_MS   10000
 
+// Fallback WiFi; isi WIFI_FALLBACK_PASSWORD di secrets.h jika jaringan memakai sandi.
+#ifndef WIFI_FALLBACK_SSID
+#define WIFI_FALLBACK_SSID "jon"
+#endif
+#ifndef WIFI_FALLBACK_PASSWORD
+#define WIFI_FALLBACK_PASSWORD ""
+#endif
+
 // Firebase Realtime Database (Spark gratis, tanpa kartu kredit).
 // DEVICE_ID & kredensial akun perangkat ada di secrets.h (satu per unit).
 #define FIREBASE_DB_URL       "https://smart-greenhouse-e214c-default-rtdb.asia-southeast1.firebasedatabase.app"

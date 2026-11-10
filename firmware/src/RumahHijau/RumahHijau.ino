@@ -194,6 +194,26 @@ void connectWiFi() {
         Serial.print(".");
     }
 
+    if (WiFi.status() != WL_CONNECTED) {
+        Serial.printf("\n[wifi] %s gagal; beralih ke %s", WIFI_SSID,
+                      WIFI_FALLBACK_SSID);
+        WiFi.disconnect(false);
+        esp_err_t err = esp_wifi_sta_wpa2_ent_disable();
+        enterpriseConfigured = false;
+        if (err != ESP_OK) {
+            Serial.printf("\n[wifi] enterprise disable error: %s\n",
+                          esp_err_to_name(err));
+        }
+
+        WiFi.begin(WIFI_FALLBACK_SSID, WIFI_FALLBACK_PASSWORD);
+        start = millis();
+        while (WiFi.status() != WL_CONNECTED &&
+               millis() - start < WIFI_TIMEOUT) {
+            vTaskDelay(pdMS_TO_TICKS(100));
+            Serial.print(".");
+        }
+    }
+
     if (WiFi.status() == WL_CONNECTED) {
         Serial.println("\n[wifi] connected!");
 
@@ -207,7 +227,7 @@ void connectWiFi() {
         Serial.println(WiFi.gatewayIP());
 
     } else {
-        Serial.println("\n[wifi] connection timeout, offline mode");
+        Serial.println("\n[wifi] both networks failed, offline mode");
     }
 
     lastReconnect = millis();
