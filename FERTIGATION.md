@@ -4,7 +4,7 @@
 
 `IDLE → FILL → DOSE_A → DOSE_B → SETTLE (30 s) → DIST → IDLE`.
 Only one pump is energized at a time. All four outputs are initialized OFF and
-the state machine aborts on invalid SHT31 data, a forced-off command, unsafe
+the state machine aborts on invalid DHT22 data, a forced-off command, unsafe
 configuration, or the per-phase timeout. There is no level sensor, mixer, TDS,
 or flow-sensor dependency. Volume is estimated as calibrated `mL/s × seconds`.
 Each pump phase is capped at 600 s, water per cycle at 18 L, each stock dose at
@@ -42,7 +42,7 @@ before connecting drivers; these pins were free in the repository mapping only.
 The firmware uses `ETo = p × (0.46 × Tmean + 8)` and `ETc = Kc × ETo`.
 `p` is the FAO-24 monthly table value interpolated for about 7° S (Semarang);
 the method is a Blaney–Criddle approximation, not FAO-56 reference ETo.
-Filtered SHT31 samples enter 1-minute buckets; irrigation is held until a full
+Filtered DHT22 temperature samples enter 1-minute buckets; irrigation is held until a full
 24-hour window exists. Daily net depth is converted using `1 mm × 1 m² = 1 L`,
 the configured 9,000 cm² area, application efficiency, and two daily cycles.
 Soil-moisture/fuzzy demand remains the trigger; ETc supplies the volume budget.
@@ -128,7 +128,7 @@ not measure EC/pH or tank level. Never use these rates with a different AB Mix.
    GPIO32 distributes to the crop. Verify no outlets or tanks can overflow;
    this firmware has no level feedback.
 6. Test with water before nutrient stock; verify FILL → A → B → 30 s all-off
-   settle → DIST, then test SHT31 fault,
+   settle → DIST, then test DHT22 fault,
    forced-off, restart, and timeout behavior.
 
 Flow-sensor test sketches under `firmware/tools/flow_sensor_test` remain

@@ -17,7 +17,7 @@ static char holdReason[48] = "";
 static const char* processResult = "IDLE";
 static Preferences prefs;
 
-// One-minute buckets retain valid, filtered SHT31 values; only a full 24 h
+// One-minute buckets retain valid, filtered temperature values; only a full 24 h
 // window is accepted for the daily Blaney-Criddle estimate.
 static float temperatures[BC_TMEAN_BUCKETS];
 static float temperatureSum = 0;

@@ -19,8 +19,8 @@ static HTTPClient http;
 // Field yang TIDAK boleh diubah namanya tanpa persetujuan antar subsistem.
 // Field angka yang tidak terbaca TIDAK dikirim (dashboard menampilkan "-").
 //
-//   temperature      °C      suhu udara (SHT31)
-//   humidity         %       kelembapan relatif udara (SHT31)
+//   temperature      °C      suhu udara (DHT22)
+//   humidity         %       kelembapan relatif udara (DHT22)
 //   soil             %       kelembapan tanah, RATA-RATA probe yang valid
 //   soil2, soil3     %       probe tanah ke-2 dan ke-3 (SOIL_PINS) untuk
 //                            melihat pot yang mengering lebih dulu; tidak

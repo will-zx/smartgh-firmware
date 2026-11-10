@@ -1,5 +1,5 @@
 #include "lcd_display.h"
-#include "sensor.h"    // i2cLock/i2cUnlock: bus I2C dipakai bersama SHT31
+#include "sensor.h"    // i2cLock/i2cUnlock: akses bus LCD dari dua task
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 
@@ -31,7 +31,7 @@ static void fmtVal(char* buf, size_t n, float v, int dec, const char* suffix) {
 
 void initLcd() {
     if (!textMux) textMux = xSemaphoreCreateMutex();
-    Wire.begin(I2C_SDA, I2C_SCL);   // bus sama dengan SHT31 (sensor.cpp); begin ganda aman
+    Wire.begin(I2C_SDA, I2C_SCL);
     lcd.begin(LCD_COLS, LCD_ROWS);
     lcd.backlight();
     lcdLine(0, "Smart Watering");
@@ -119,7 +119,7 @@ static void lcdScrollTask(void* arg) {
         }
 
         // Tulis hanya kalau isinya berubah: teks pendek atau jeda tahan tidak
-        // perlu membanjiri bus I2C yang sama dengan SHT31 (~57 tulis/detik).
+        // perlu membanjiri bus I2C LCD (~57 tulis/detik).
         // "shown" ditandai hanya kalau tulis sukses, supaya lock yang gagal
         // dicoba lagi di tick berikutnya.
         if (strcmp(win, shown) != 0 && i2cLock(pdMS_TO_TICKS(50))) {

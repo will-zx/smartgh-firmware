@@ -651,7 +651,7 @@ void setup() {
         Serial.printf("[wdt] GAGAL init Task WDT: %s\n", esp_err_to_name(wdtErr));
     }
 
-    i2cBusInit();     // mutex bus I2C dipakai SHT31 + LCD (dua task)
+    i2cBusInit();     // mutex bus I2C LCD (dua task)
     initLcd();
     lcdScrollStart(); // task marquee baris status (core 0, prio 1)
     initSdLogger();

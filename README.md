@@ -42,7 +42,7 @@ FreeRTOS.
 
 | Sensor | Antarmuka | Pin | Output |
 | --- | --- | --- | --- |
-| SHT31 (suhu dan kelembapan) | I2C `0x44` | SDA 21, SCL 22 | +/- 0.2 °C, +/- 2 % RH |
+| DHT22 (suhu dan kelembapan) | Digital one-wire | DATA GPIO 4 | Interval baca minimal 2 detik |
 | Tiga probe soil kapasitif | Analog (ADC1) | GPIO 34 / 33 / 39 | 0-100 % (ADC terbalik) |
 
 Ketiga probe dibaca bergantian (jeda 10 ms), lalu rata-rata probe yang **valid**
@@ -54,8 +54,12 @@ karena nilai NaN dibuang dari JSON.
 
 Semua pin analog wajib di **ADC1**. Selama WiFi aktif, ADC2 (GPIO 0, 2, 4,
 12-15, 25-27) tidak bisa dipakai, jadi soil menempati 34/33/39 dan pompa DIST
-memakai 32 (digital). GPIO 35 dan 36 bebas. GPIO 34 dan 39 input-only, tanpa
-pull-up internal.
+memakai 32 (digital). GPIO 36 tetap bebas. GPIO 34, 35, dan 39 input-only,
+tanpa pull-up internal.
+
+DHT22 disuplai 3,3 V; hubungkan DATA ke GPIO 4 dan pasang pull-up eksternal
+4,7-10 kΩ ke 3,3 V jika modul belum memilikinya. GPIO 4 dipakai sebagai pin
+digital; batas ADC2 hanya berlaku bila digunakan sebagai input analog saat WiFi aktif.
 
 ### Aktuator
 
@@ -87,7 +91,7 @@ Dua PSU terpisah; outputnya jangan diparalel dan jangan digabung jadi satu.
 | PSU | Beban | Margin |
 | --- | --- | --- |
 | 12 V 5 A | blower 0,6 A + misting 0,3 A + DIST (worst-case realistis ~1,2 A) | ~4× |
-| 5 V 2 A | ESP32, LCD + backlight, SHT31 (~0,4-0,5 A) | ~4× |
+| 5 V 2 A | ESP32, LCD + backlight | ~4× |
 
 - **GND kedua PSU disatukan di satu titik.** Input modul XY-MOS butuh referensi
   common; tanpa itu modul tidak terbaca sebagai HIGH/LOW yang jelas.
@@ -100,7 +104,7 @@ Dua PSU terpisah; outputnya jangan diparalel dan jangan digabung jadi satu.
   start pompa 12 V tidak ikut menjatuhkannya; kalau rail tetap turun saat beban
   berat, mitigasi berurutan: (1) elco dan jalur 5 V sendiri ke ESP, (2) buck
   12 V→5 V khusus ESP (MP1584/LM2596).
-- SHT31 boleh 3,3 V; LCD disuplai 5 V.
+- DHT22 disuplai 3,3 V; LCD disuplai 5 V.
 - Kabel analog soil dijauhkan serta dipendekkan dari kabel motor 12 V — noise
   dari kabel pompa membuat bacaan ADC melompat.
 - Modul microSD wajib 3,3 V (level sinyal SD 3,3 V), kartu format FAT32 maksimal
@@ -122,7 +126,7 @@ modul XY-MOS aktif-LOW dapat dipakai tanpa mengubah kode.
 flowchart LR
   subgraph ESP ["ESP32 · controlTask (core 1) · tiap 2 detik"]
     direction LR
-    S["SHT31<br/>Soil"] --> F["filter EMA"] --> V["VPD · ETc"] --> Z{{"fuzzy Mamdani"}} --> A["aktuator<br/>misting · blower · pompa DIST"]
+    S["DHT22<br/>Soil"] --> F["filter EMA"] --> V["VPD · ETc"] --> Z{{"fuzzy Mamdani"}} --> A["aktuator<br/>misting · blower · pompa DIST"]
   end
   R[("Firebase RTDB")]
   D["Dashboard web"]

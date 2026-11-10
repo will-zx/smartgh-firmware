@@ -1,12 +1,11 @@
 #include "sensor.h"
-#include <Wire.h>
-#include <Adafruit_SHT31.h>
+#include <DHT.h>
 
-static Adafruit_SHT31 sht31 = Adafruit_SHT31();
-static bool shtOk = false;
+static DHT dht(DHT_PIN, DHT22);
+static bool dhtReadOk = false;
 
-// Satu mutex untuk seluruh bus I2C (SHT31 + LCD). Wire tidak thread-safe dan
-// bus dipakai dua task (control + scroll LCD), jadi semua transaksi lewat sini.
+// Mutex bus I2C LCD: Wire tidak thread-safe dan bus dipakai dua task
+// (control + scroll LCD), jadi semua transaksi LCD lewat sini.
 static SemaphoreHandle_t i2cMux = nullptr;
 
 void i2cBusInit() {
@@ -30,13 +29,8 @@ static const int     soilDry[SOIL_COUNT]  = SOIL_DRY_CAL;
 static const int     soilWet[SOIL_COUNT]  = SOIL_WET_CAL;
 
 void initSensor() {
-    Wire.begin(I2C_SDA, I2C_SCL);
-    shtOk = sht31.begin(SHT31_I2C_ADDR);
-    if (shtOk) {
-        Serial.println("[sensor] SHT31 terdeteksi");
-    } else {
-        Serial.println("[sensor] SHT31 TIDAK terdeteksi - cek wiring I2C (addr 0x44)");
-    }
+    dht.begin();
+    Serial.printf("[sensor] DHT22 mulai pada GPIO %u\n", DHT_PIN);
     for (uint8_t ch = 0; ch < SOIL_COUNT; ch++) {
         pinMode(soilPins[ch], INPUT);
     }
@@ -67,16 +61,11 @@ static bool soilPercent(uint8_t ch, float raw, float* out) {
 
 SensorData readSensors() {
     SensorData data;
-    // Gagal dapat bus (task scroll LCD sedang menulis) bukan alasan memblokir
-    // kontrol: laporkan NaN, siklus berikutnya (2 s lagi) baca ulang.
-    if (i2cLock(pdMS_TO_TICKS(50))) {
-        data.temperature = sht31.readTemperature();
-        data.humidity = sht31.readHumidity();
-        i2cUnlock();
-    } else {
-        data.temperature = NAN;
-        data.humidity = NAN;
-    }
+    data.temperature = dht.readTemperature();
+    data.humidity = dht.readHumidity();
+    dhtReadOk = isfinite(data.temperature) && isfinite(data.humidity) &&
+                data.temperature > -20.0f && data.temperature < 60.0f &&
+                data.humidity >= 0.0f && data.humidity <= 100.0f;
 
     // Tiga probe dibaca bergantian. Keputusan irigasi memakai RATA-RATA probe
     // yang valid, sedangkan tiap probe tetap dilaporkan (soil2/soil3) supaya
@@ -101,18 +90,10 @@ SensorData readSensors() {
     data.soilValid = (n > 0);
     data.soilMoisture = (n > 0) ? (sum / (float)n) : 0.0f;
 
-    data.valid = shtOk && !isnan(data.temperature) && !isnan(data.humidity) &&
-                 data.temperature > -20.0 && data.temperature < 60.0 &&
-                 data.humidity >= 0.0 && data.humidity <= 100.0;
+    data.valid = dhtReadOk;
     return data;
 }
 
 const char* getSensorError() {
-    if (!shtOk) return "SHT31 tidak terdeteksi";
-    // Pembacaan di sini juga memakai bus I2C (bukan cuma diagnostik teks).
-    if (!i2cLock(pdMS_TO_TICKS(50))) return "bus I2C sibuk";
-    bool gagal = isnan(sht31.readTemperature());
-    i2cUnlock();
-    if (gagal) return "read gagal (bus I2C?)";
-    return "OK";
+    return dhtReadOk ? "OK" : "DHT22 tidak terbaca / data di luar rentang";
 }

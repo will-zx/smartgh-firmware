@@ -26,9 +26,9 @@
 // di tengah push. 55 menit = 5 menit margin.
 #define TOKEN_REFRESH_MS      3300000
 
-// Sensor: SHT31 (I2C, akurasi ±0.2°C / ±2% RH) — share bus dengan LCD.
-// Alamat default 0x44 (LCD backpack PCF8574 di 0x27). Modul SHT31 umumnya sudah ada pull-up I2C.
-#define SHT31_I2C_ADDR  0x44
+// Sensor suhu/kelembapan DHT22 pada GPIO digital yang mendukung output.
+// Pasang pull-up eksternal DATA ke 3,3 V bila modul belum memilikinya.
+#define DHT_PIN         4
 
 // Tiga probe soil (kapasitif) supaya satu zona terwakili beberapa titik tanam.
 // WAJIB di ADC1: selama WiFi aktif, ADC2 (GPIO 0,2,4,12-15,25-27) tidak bisa
@@ -38,7 +38,7 @@
 #define SOIL_COUNT      3
 #define SOIL_PINS       {34, 33, 39}
 
-// I2C bus bersama: SHT31 + LCD 20x4 (backpack PCF8574 0x27; 0x3F = cadangan).
+// I2C bus LCD 20x4 (backpack PCF8574 0x27; 0x3F = cadangan).
 #define I2C_SDA         21
 #define I2C_SCL         22
 #define LCD_ADDR        0x27
@@ -147,8 +147,7 @@ static_assert(PUMP_FILL != 34 && PUMP_FILL != 33 && PUMP_FILL != 39 &&
 #define SD_FLUSH_MS     300000
 #define SD_LOG_FLUSH_EVERY  30
 
-// Timing (SHT31 jauh lebih cepat dari DHT22; delay(2000) di loop dipertahankan
-// agar push DB & LCD tetap stabil).
+// DHT22 perlu jeda minimal 2 s antarbacaan; periode controlTask dipertahankan.
 #define LCD_INTERVAL    1000
 
 // Baris status LCD (baris 4) di-scroll kalau lebih dari 20 kolom, karena
