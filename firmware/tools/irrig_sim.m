@@ -1,4 +1,8 @@
-% irrig_sim.m — replika state machine fertigasi firmware/src/irrigation.cpp
+% LEGACY simulation — NOT a replica or test of the current firmware state machine.
+% It models an earlier TDS/check phase and fixed durations, neither of which is
+% present in the current no-sensor, time-based four-pump control.
+% Do not use its results to validate irrigation.cpp; see FERTIGATION.md.
+% irrig_sim.m — legacy conceptual fertigation simulation
 %
 % Jalankan (dari akar repo):
 %   octave --no-gui --eval "addpath('firmware/tools'); irrig_sim"

@@ -4,316 +4,260 @@
 #include <Preferences.h>
 #include <time.h>
 
-// ==== State machine irigasi (satu pompa) ====
-// DIST menarik air langsung dari penampungan utama ke zona tanam. Tidak ada
-// fase pengisian ember atau dosing pupuk: dosis dihitung dari ETc, pompa
-// menyala selama durasi dosis itu, lalu berhenti sendiri.
 static IrrigPhase phase = IRRIG_IDLE;
-static unsigned long phaseStart = 0;       // mulai fase DIST berjalan
-static unsigned long cycleDoseMs = 0;      // durasi pompa siklus yang berjalan
-static float         cycleDoseMl = 0.0f;   // dosis siklus yang berjalan
-static unsigned long lastCycleStartMs = 0; // awal siklus terakhir (jarak antar siklus)
-static bool          hasCycle = false;
+static uint32_t phaseStart = 0;
+static uint32_t phaseDurationMs = 0;
+static float cycleWaterMl = 0.0f;
+static float cycleDoseAMlPerL = 0.0f, cycleDoseBMlPerL = 0.0f;
+static float usedMl = 0.0f;
+static uint32_t usedDay = 0;
+static bool budgetLoaded = false;
+static uint32_t lastManualRequestId = 0;
+static char holdReason[48] = "";
+static const char* processResult = "IDLE";
+static Preferences prefs;
 
-// Tracker anggaran harian: volume terkumpul + indeks hari (epoch/86400).
-// Volume bertambah saat fase DIST dimulai (dosis yang dikunci untuk siklus itu).
-static float         usedMl = 0.0f;
-static unsigned long usedDayIndex = 0;
-static bool          usedDayInit = false;
+// One-minute buckets retain valid, filtered SHT31 values; only a full 24 h
+// window is accepted for the daily Blaney-Criddle estimate.
+static float temperatures[BC_TMEAN_BUCKETS];
+static float temperatureSum = 0;
+static uint16_t temperatureCount = 0;
+static uint32_t temperatureBucket = UINT32_MAX;
+static bool temperatureInit = false;
+static uint32_t lastCycleEpoch = 0;
+static char lastPrintedHold[sizeof(holdReason)] = "";
 
-// Log penolakan dibatasi 1x per 60 detik per alasan (jangan spam tiap 2 s).
-static char          lastRejectKey[16] = "";
-static unsigned long lastRejectMs = 0;
-
-// Alasan permintaan terakhir ditahan, dikirim ke dashboard supaya operator
-// tahu kenapa air tidak keluar (bukan cuma "tidak merespons"). Kosong = tidak
-// ditahan.
-static char          holdReason[40] = "";
-static Preferences   prefsIrig;
-static bool          budgetLoaded = false;
-
-static void setHoldReason(const char* r) {
-    strncpy(holdReason, r, sizeof(holdReason) - 1);
-    holdReason[sizeof(holdReason) - 1] = '\0';
+static void setPump(uint8_t pin, bool on) {
+    digitalWrite(pin, (on ^ MOSFET_INVERTED) ? HIGH : LOW);
 }
-
-// Anggaran harian harus bertahan setelah reboot/brownout; kalau hanya di RAM,
-// setiap restart mengizinkan satu anggaran penuh lagi.
+static void allPumpsOff() {
+    setPump(PUMP_FILL, false); setPump(PUMP_DOSE_A, false);
+    setPump(PUMP_DOSE_B, false); setPump(PUMP_DIST, false);
+}
+static float flowRate(IrrigPhase p) {
+    switch (p) {
+        case IRRIG_FILL: return FILL_FLOW_ML_S;
+        case IRRIG_DOSE_A: return DOSE_A_FLOW_ML_S;
+        case IRRIG_DOSE_B: return DOSE_B_FLOW_ML_S;
+        case IRRIG_DIST: return DIST_FLOW_ML_S;
+        default: return 0;
+    }
+}
+static float durationSeconds(float targetMl, float flowMlPerSec) {
+    if (!isfinite(targetMl) || !isfinite(flowMlPerSec) || targetMl < 0 || flowMlPerSec <= 0) return NAN;
+    return targetMl / flowMlPerSec;
+}
+static unsigned long durationMs(float targetMl, float flowMlPerSec) {
+    float ms = durationSeconds(targetMl, flowMlPerSec) * 1000.0f;
+    return isfinite(ms) && ms >= 0 ? (unsigned long)ceilf(ms) : 0;
+}
+static float finalMixVolumeMl() {
+    return cycleWaterMl + cycleWaterMl / 1000.0f * (cycleDoseAMlPerL + cycleDoseBMlPerL);
+}
+static float phaseVolume(IrrigPhase p) {
+    if (p == IRRIG_FILL) return cycleWaterMl;
+    if (p == IRRIG_DIST) return finalMixVolumeMl();
+    if (p == IRRIG_DOSE_A) return cycleWaterMl / 1000.0f * cycleDoseAMlPerL;
+    if (p == IRRIG_DOSE_B) return cycleWaterMl / 1000.0f * cycleDoseBMlPerL;
+    return 0;
+}
+static uint32_t currentDay() {
+    time_t now = time(nullptr);
+    return now >= 100000 ? (uint32_t)((now + 7 * 3600) / 86400) : 0;
+}
 static void loadBudget() {
     if (budgetLoaded) return;
     budgetLoaded = true;
-    prefsIrig.begin("smartgh_irig", false);
-    usedMl = prefsIrig.getFloat("used_ml", 0.0f);
-    usedDayIndex = prefsIrig.getULong("used_day", 0);
-    if (!isfinite(usedMl) || usedMl < 0.0f) usedMl = 0.0f;
+    prefs.begin("smartgh_irig", false);
+    usedMl = prefs.getFloat("used_ml", 0);
+    usedDay = prefs.getUInt("used_day", 0);
+    lastCycleEpoch = prefs.getUInt("last_cycle", 0);
+    if (!isfinite(usedMl) || usedMl < 0) usedMl = 0;
 }
-
 static void persistBudget() {
-    prefsIrig.putFloat("used_ml", usedMl);
-    prefsIrig.putULong("used_day", usedDayIndex);
+    prefs.putFloat("used_ml", usedMl); prefs.putUInt("used_day", usedDay);
+    prefs.putUInt("last_cycle", lastCycleEpoch);
 }
-
-// ID permintaan manual terakhir yang sudah menghasilkan satu siklus.
-static uint32_t      lastManualRequestId = 0;
-
-// ==== Tmean: rata-rata suhu sliding (ember 1 menit x 180 ember = 3 jam) ====
-// FAO-56 menetapkan Penman-Monteith sebagai metode ETo standar; Blaney-
-// Criddle (FAO-24) dikalibrasi untuk periode panjang. Rata-rata 3 jam ini
-// PENDEKATAN PRAKTIS, bukan ETo standar.
-static float    tmeanBucket[BC_TMEAN_BUCKETS];
-static float    tmeanSum = 0.0f;
-static int      tmeanValid = 0;             // jumlah ember yang terisi
-static unsigned long tmeanBucketIdx = 0;     // indeks ember terakhir
-
-// p per bulan dari Tabel FAO-24 (SUN_P_MONTH di config.h). Bulan diambil dari
-// jam WIB supaya p mengikuti musim; kalau jam belum sinkron dipakai Januari
-// sebagai isi awal (selisihnya kecil, p hanya bergerak 0.266-0.284).
+static void rollBudget() {
+    loadBudget();
+    uint32_t day = currentDay();
+    if (day && day > usedDay) { usedDay = day; usedMl = 0; persistBudget(); }
+}
 static float pFactorSaatIni() {
-    int m = 1;
-    time_t t = time(nullptr);
-    if (t >= 100000) {
-        struct tm lt;
-        localtime_r(&t, &lt);
-        m = lt.tm_mon + 1;
+    time_t now = time(nullptr);
+    int month = 1;
+    if (now >= 100000) { struct tm local; localtime_r(&now, &local); month = local.tm_mon + 1; }
+    return SUN_P_MONTH[(month >= 1 && month <= 12) ? month - 1 : 0];
+}
+static bool fertilizerConfigValid() {
+    float a = phaseDoseAMlPerL(), b = phaseDoseBMlPerL();
+    return FERTILIZER_DOSE_ENABLED && isfinite(a) && isfinite(b) && a > 0 && b > 0 &&
+        a <= 100.0f && b <= 100.0f &&
+        FILL_FLOW_ML_S > 0 && DOSE_A_FLOW_ML_S > 0 &&
+        DOSE_B_FLOW_ML_S > 0 && DIST_FLOW_ML_S > 0;
+}
+static bool cycleFitsLimits(float waterMl, float doseAMlPerL, float doseBMlPerL) {
+    const float aMl = waterMl / 1000.0f * doseAMlPerL;
+    const float bMl = waterMl / 1000.0f * doseBMlPerL;
+    const float finalMl = waterMl + aMl + bMl;
+    const float volumes[] = {waterMl, aMl, bMl, finalMl};
+    const float rates[] = {FILL_FLOW_ML_S, DOSE_A_FLOW_ML_S, DOSE_B_FLOW_ML_S, DIST_FLOW_ML_S};
+    if (!(MIX_TANK_CAPACITY_ML > 0) || !isfinite(finalMl) || finalMl > MIX_TANK_CAPACITY_ML ||
+        waterMl > IRRIG_MAX_CYCLE_ML || aMl <= 0 || bMl <= 0 ||
+        aMl > IRRIG_MAX_DOSE_ML || bMl > IRRIG_MAX_DOSE_ML ||
+        aMl > STOCK_A_CAPACITY_ML || bMl > STOCK_B_CAPACITY_ML) return false;
+    for (uint8_t i = 0; i < 4; ++i) {
+        float durationMs = durationSeconds(volumes[i], rates[i]) * 1000.0f;
+        if (!(rates[i] > 0) || !isfinite(durationMs) || durationMs <= 0 ||
+            durationMs > IRRIG_PHASE_TIMEOUT_MS) return false;
     }
-    if (m < 1 || m > 12) m = 1;
-    return SUN_P_MONTH[m - 1];
+    return true;
 }
 
-// Blaney-Criddle: ETo = p * (0,46*Tmean + 8), ETc = Kc * ETo.
-// Kc diambil dari fase yang sedang berjalan (Tabel 2.1 proposal).
 float calculateEtc() {
     float tmean = irrigationTmean();
-    if (isnan(tmean)) return 0.0f;
-    float eto = constrain(pFactorSaatIni() * (BC_T_COEF * tmean + BC_T_CONST),
-                          0.0f, MAX_ET0);
+    if (!isfinite(tmean)) return 0;
+    float eto = constrain(pFactorSaatIni() * (BC_T_COEF * tmean + BC_T_CONST), 0.0f, MAX_ET0);
     return eto * phaseKc();
 }
-
 void irrigationFeedTemp(float temp) {
-    // PENTING: array static terisi 0,0 (bukan NaN), sedangkan sentinel "ember
-    // kosong" di sini adalah NaN. Tanpa inisialisasi ini isnan() tidak pernah
-    // true -> tmeanValid tidak pernah bertambah -> irrigationTmean() selalu
-    // NaN -> ETc 0 -> irigasi tidak pernah jalan (pernah terjadi di device).
-    static bool tmeanInit = false;
-    if (!tmeanInit) {
-        for (int k = 0; k < BC_TMEAN_BUCKETS; k++) tmeanBucket[k] = NAN;
-        tmeanInit = true;
+    if (!isfinite(temp)) return;
+    if (!temperatureInit) {
+        for (uint16_t i = 0; i < BC_TMEAN_BUCKETS; ++i) temperatures[i] = NAN;
+        temperatureBucket = millis() / BC_TMEAN_BUCKET_MS;
+        temperatureInit = true;
     }
-    if (isnan(temp)) return;                 // jangan racuni jendela dengan NaN
-    unsigned long bucket = millis() / BC_TMEAN_BUCKET_MS;
-    if (bucket != tmeanBucketIdx) {
-        // Maju ember: bersihkan ember yang terlewati (bisa banyak kalau
-        // device sempat mati/terhenti) supaya jendela tetap "3 jam terakhir".
-        unsigned long gap = bucket - tmeanBucketIdx;
-        unsigned long steps = (gap > (unsigned long)BC_TMEAN_BUCKETS)
-                                ? (unsigned long)BC_TMEAN_BUCKETS : gap;
-        for (unsigned long k = 1; k <= steps; k++) {
-            unsigned long idx = (tmeanBucketIdx + k) % BC_TMEAN_BUCKETS;
-            if (!isnan(tmeanBucket[idx])) {
-                tmeanSum -= tmeanBucket[idx];
-                tmeanBucket[idx] = NAN;
-                tmeanValid--;
-            }
+    uint32_t bucket = millis() / BC_TMEAN_BUCKET_MS;
+    if (bucket != temperatureBucket) {
+        uint32_t gap = bucket - temperatureBucket;
+        uint32_t steps = min(gap, (uint32_t)BC_TMEAN_BUCKETS);
+        for (uint32_t k = 1; k <= steps; ++k) {
+            uint32_t idx = (temperatureBucket + k) % BC_TMEAN_BUCKETS;
+            if (isfinite(temperatures[idx])) { temperatureSum -= temperatures[idx]; --temperatureCount; }
+            temperatures[idx] = NAN;
         }
-        tmeanBucketIdx = bucket;
+        temperatureBucket = bucket;
     }
-    unsigned int idx = bucket % BC_TMEAN_BUCKETS;
-    if (isnan(tmeanBucket[idx])) tmeanValid++;
-    else tmeanSum -= tmeanBucket[idx];
-    tmeanBucket[idx] = temp;
-    tmeanSum += temp;
+    uint32_t idx = bucket % BC_TMEAN_BUCKETS;
+    if (isfinite(temperatures[idx])) temperatureSum -= temperatures[idx];
+    else ++temperatureCount;
+    temperatures[idx] = temp; temperatureSum += temp;
 }
-
 float irrigationTmean() {
-    if (tmeanValid <= 0) return NAN;
-    return tmeanSum / (float)tmeanValid;
+    if (temperatureCount < BC_TMEAN_BUCKETS) return NAN;
+    return temperatureSum / temperatureCount;
 }
-
-// ==== Dosis dari ETc ====
 float irrigationDailyBudgetMl() {
     float etc = calculateEtc();
-    if (etc <= 0.0f) return 0.0f;                 // Tmean belum ada -> belum ada anggaran
-    return etc * IRRIG_AREA_CM2 * 0.1f;           // mm x cm2 x 0,1 = mL
+    return etc > 0 && IRRIG_EFFICIENCY > 0 && IRRIG_EFFICIENCY <= 1.0f
+        ? etc * IRRIG_AREA_CM2 * 0.1f / IRRIG_EFFICIENCY : 0;
 }
-
 float irrigationDoseMl() {
-    if (IRRIG_CYCLES_PER_DAY <= 0) return 0.0f;
-    return irrigationDailyBudgetMl() / (float)IRRIG_CYCLES_PER_DAY;
+    return IRRIG_CYCLES_PER_DAY > 0 ? min(irrigationDailyBudgetMl() / IRRIG_CYCLES_PER_DAY, IRRIG_MAX_CYCLE_ML) : 0;
 }
-
-unsigned long irrigationDoseMs() {
-    float dose = irrigationDoseMl();
-    if (dose <= 0.0f || PUMP_DIST_ML_PER_S <= 0.0f) return 0UL;
-    return (unsigned long)(dose / PUMP_DIST_ML_PER_S * 1000.0f);
-}
-
-unsigned long irrigationMinIntervalMs() {
-    if (IRRIG_CYCLES_PER_DAY <= 0) return 0UL;
-    return 86400000UL / (unsigned long)IRRIG_CYCLES_PER_DAY;   // 24 jam / siklus per hari
-}
-
-// Indeks hari untuk reset anggaran harian: epoch WIB (UTC+7) supaya reset
-// terjadi tengah malam lokal; kalau jam belum sinkron dipakai hari uptime.
-static unsigned long currentDayIndex() {
-    time_t t = time(nullptr);
-    if (t >= 100000) return (unsigned long)((t + 7 * 3600) / 86400);
-    return 0;  // tanpa NTP jangan ubah anggaran tersimpan berdasarkan uptime
-}
-
-static void budgetRollOver() {
-    loadBudget();
-    unsigned long day = currentDayIndex();
-    if (day == 0) return;  // konservatif sampai epoch valid; hindari reset ganda saat NTP sinkron
-    if (!usedDayInit) {
-        usedDayInit = true;
-        // Jangan menghapus anggaran tersimpan bila NTP kembali ke hari lama.
-        // Hari kosong atau hari yang maju = mulai anggaran baru.
-        if (usedDayIndex == 0 || day > usedDayIndex) {
-            usedMl = 0.0f;
-            usedDayIndex = day;
-        }
-        persistBudget();
-        return;
-    }
-    if (day > usedDayIndex) {
-        usedDayIndex = day;
-        usedMl = 0.0f;
-        persistBudget();
-        Serial.println("[irigasi] hari berganti: anggaran harian direset");
-    }
-}
-
+unsigned long irrigationDoseMs() { return durationMs(irrigationDoseMl(), DIST_FLOW_ML_S); }
+unsigned long irrigationMinIntervalMs() { return IRRIG_CYCLES_PER_DAY > 0 ? 86400000UL / IRRIG_CYCLES_PER_DAY : 0; }
 IrrigStatus irrigationStatus() {
-    IrrigStatus st;
-    st.budgetMl = irrigationDailyBudgetMl();
-    st.usedMl = usedMl;
-    st.minIntervalMs = irrigationMinIntervalMs();
-    st.doseMs = (phase == IRRIG_DIST) ? cycleDoseMs : irrigationDoseMs();
-    st.doseMl = (phase == IRRIG_DIST) ? cycleDoseMl : irrigationDoseMl();
-    st.holdReason = holdReason;
-    return st;
+    IrrigStatus s{}; s.budgetMl = irrigationDailyBudgetMl(); s.usedMl = usedMl;
+    s.phaseName = irrigationPhaseName();
+    s.result = processResult;
+    s.phaseTargetMl = phase == IRRIG_IDLE || phase == IRRIG_SETTLE ? 0 : phaseVolume(phase);
+    s.phaseDurationMs = phase == IRRIG_IDLE ? 0 : phaseDurationMs;
+    s.phaseEstimatedMl = phase == IRRIG_SETTLE || phase == IRRIG_IDLE ? 0 :
+        flowRate(phase) * ((float)phaseDurationMs / 1000.0f);
+    s.doseAMl = cycleWaterMl > 0 ? cycleWaterMl / 1000.0f * cycleDoseAMlPerL :
+        irrigationDoseMl() / 1000.0f * phaseDoseAMlPerL();
+    s.doseBMl = cycleWaterMl > 0 ? cycleWaterMl / 1000.0f * cycleDoseBMlPerL :
+        irrigationDoseMl() / 1000.0f * phaseDoseBMlPerL();
+    float plannedWaterMl = cycleWaterMl > 0 ? cycleWaterMl : irrigationDoseMl();
+    float plannedA = cycleWaterMl > 0 ? cycleDoseAMlPerL : phaseDoseAMlPerL();
+    float plannedB = cycleWaterMl > 0 ? cycleDoseBMlPerL : phaseDoseBMlPerL();
+    s.fillDurationMs = durationMs(plannedWaterMl, FILL_FLOW_ML_S);
+    s.doseADurationMs = durationMs(plannedWaterMl / 1000.0f * plannedA, DOSE_A_FLOW_ML_S);
+    s.doseBDurationMs = durationMs(plannedWaterMl / 1000.0f * plannedB, DOSE_B_FLOW_ML_S);
+    s.distDurationMs = durationMs(plannedWaterMl + plannedWaterMl / 1000.0f * (plannedA + plannedB), DIST_FLOW_ML_S);
+    s.minIntervalMs = irrigationMinIntervalMs();
+    s.doseMl = phase == IRRIG_IDLE ? irrigationDoseMl() : cycleWaterMl;
+    s.doseMs = phase == IRRIG_IDLE ? irrigationDoseMs() : durationMs(cycleWaterMl, DIST_FLOW_ML_S);
+    s.holdReason = holdReason; return s;
 }
-
-// Pompa DIST: satu-satunya aktuator irigasi.
-static void setDist(bool on) {
-    digitalWrite(PUMP_DIST, (on ^ MOSFET_INVERTED) ? HIGH : LOW);
-}
-
 const char* irrigationPhaseName() {
     switch (phase) {
-        case IRRIG_IDLE: return "IDLE";
-        case IRRIG_DIST: return "DIST";
+        case IRRIG_FILL: return "FILL"; case IRRIG_DOSE_A: return "DOSE_A";
+        case IRRIG_DOSE_B: return "DOSE_B"; case IRRIG_SETTLE: return "SETTLE";
+        case IRRIG_DIST: return "DIST"; default: return "IDLE";
     }
-    return "?";
 }
-
-// Log penolakan: 1x per 60 detik per alasan.
-static void logReject(const char* key, const char* msg) {
-    unsigned long now = millis();
-    if (strcmp(lastRejectKey, key) == 0 && (now - lastRejectMs) < 60000UL) return;
-    strncpy(lastRejectKey, key, sizeof(lastRejectKey) - 1);
-    lastRejectKey[sizeof(lastRejectKey) - 1] = '\0';
-    lastRejectMs = now;
-    Serial.println(msg);
+bool irrigationRunning() { return phase != IRRIG_IDLE; }
+static void startPhase(IrrigPhase next, uint32_t now) {
+    allPumpsOff(); phase = next; phaseStart = now;
+    if (next == IRRIG_SETTLE) phaseDurationMs = IRRIG_SETTLE_MS;
+    else {
+        float rate = flowRate(next), volume = phaseVolume(next);
+        if (!(rate > 0) || !isfinite(volume) || volume < 0 || volume > IRRIG_MAX_DOSE_ML && (next == IRRIG_DOSE_A || next == IRRIG_DOSE_B)) {
+            strncpy(holdReason, "konfigurasi volume/debit tidak aman", sizeof(holdReason)-1);
+            phase = IRRIG_IDLE; allPumpsOff(); return;
+        }
+        phaseDurationMs = durationMs(volume, rate);
+        if (!phaseDurationMs || phaseDurationMs > IRRIG_PHASE_TIMEOUT_MS) {
+            strncpy(holdReason, "durasi pompa melewati batas", sizeof(holdReason)-1);
+            phase = IRRIG_IDLE; allPumpsOff(); return;
+        }
+        setPump(next == IRRIG_FILL ? PUMP_FILL : next == IRRIG_DOSE_A ? PUMP_DOSE_A : next == IRRIG_DOSE_B ? PUMP_DOSE_B : PUMP_DIST, true);
+    }
+    Serial.printf("[irigasi] fase %s, target %.2f mL durasi %.2f s\n", irrigationPhaseName(), phaseVolume(next), phaseDurationMs / 1000.0f);
 }
-
-bool irrigationRunning() {
-    return phase != IRRIG_IDLE;
-}
-
 void irrigationAbort() {
-    // Sensor tidak valid / darurat: pompa langsung dimatikan. Volume yang
-    // sudah dialirkan TIDAK dikembalikan ke tracker (airnya sudah keluar).
     if (phase != IRRIG_IDLE) {
-        Serial.println("[irigasi] siklus dibatalkan (abort) - pompa dimatikan");
+        processResult = "FAILED";
+        strncpy(holdReason, "proses dibatalkan oleh sensor/override", sizeof(holdReason)-1);
+        holdReason[sizeof(holdReason)-1] = '\0';
     }
-    setDist(false);
-    phase = IRRIG_IDLE;
+    allPumpsOff(); phase = IRRIG_IDLE;
 }
-
-// Mulai fase DIST: catat waktunya, nyalakan pompa, cetak ke serial.
-// `now` dioper dari pemanggil supaya pemeriksaan selesai di iterasi yang sama
-// tidak melihat selisih waktu negatif (unsigned wrap -> pompa langsung mati).
-static void startDist(unsigned long now) {
-    phase = IRRIG_DIST;
-    phaseStart = now;
-    setDist(true);
-    Serial.printf("irigasi: fase %s\n", irrigationPhaseName());
-}
-
-void irrigationUpdate(bool trigger, bool manual, uint32_t manualRequestId) {
-    unsigned long now = millis();
-    budgetRollOver();
-    // OFF/Auto membatalkan permintaan manual yang belum sempat dijalankan.
-    if (!manual) lastManualRequestId = manualRequestId;
-
-
-    // Syarat memulai siklus: trigger true DAN jeda minimum sudah lewat DAN
-    // (terkumpul + dosis <= anggaran harian).
-    // Permintaan yang ditahan (jeda/budget) DICoba ulang otomatis selama
-    // trigger tetap true -> tidak ada "irigasi mati permanen" seperti dulu.
-    // Override manual operator boleh menembus jeda & anggaran (perintah
-    // eksplisit), tapi hanya SATU siklus per permintaan manual.
-    if (trigger && phase == IRRIG_IDLE) {
-        float   budget = irrigationDailyBudgetMl();
-        float   dose = irrigationDoseMl();
-        unsigned long doseMs = irrigationDoseMs();
-        char msg[120];
-
-        bool budgetFull    = (usedMl + dose > budget + 0.5f);
-        bool intervalShort = hasCycle && (now - lastCycleStartMs) < irrigationMinIntervalMs();
-        bool manualAllow   = manual && manualRequestId != lastManualRequestId;
-
-        if (dose <= 0.0f || doseMs == 0UL) {
-            setHoldReason("ETc belum tersedia");
-            snprintf(msg, sizeof(msg),
-                     "[irigasi] ETc belum tersedia, irigasi ditahan");
-            logReject("etc", msg);
-        } else if (budgetFull && !manualAllow) {
-            setHoldReason("anggaran harian habis");
-            snprintf(msg, sizeof(msg),
-                     "[irigasi] anggaran harian habis: %.0f/%.0f mL", usedMl, budget);
-            logReject("budget", msg);
-        } else if (intervalShort && !manualAllow) {
-            setHoldReason("jeda minimum belum lewat");
-            unsigned long sisa = irrigationMinIntervalMs() - (now - lastCycleStartMs);
-            snprintf(msg, sizeof(msg),
-                     "[irigasi] jeda minimum belum lewat: sisa %.0f menit", sisa / 60000.0f);
-            logReject("jeda", msg);
-        } else {
-            if (manualAllow && (budgetFull || intervalShort)) {
-                Serial.println("[irigasi] override manual: siklus jalan di luar "
-                               "jeda/anggaran (niat operator)");
-            }
-            // Konsumsi tepat satu ID; ON yang masuk saat siklus berjalan tetap
-            // menjadi permintaan tertunda untuk siklus berikutnya.
-            if (manualAllow) lastManualRequestId++;
-            setHoldReason("");
-            cycleDoseMs = doseMs;
-            cycleDoseMl = dose;
-            lastCycleStartMs = now;
-            hasCycle = true;
-            usedMl += dose;                      // volume terkumpul hari ini
-            persistBudget();
-            Serial.printf("irigasi: dose %.0f mL -> %.0f s | jeda min %.0f jam | "
-                          "anggaran harian %.0f mL, terpakai %.0f mL\n",
-                          dose, doseMs / 1000.0f,
-                          irrigationMinIntervalMs() / 3600000.0f, budget, usedMl);
-            startDist(now);
+void irrigationUpdate(bool trigger, bool manual, uint32_t requestId) {
+    uint32_t now = millis(); rollBudget();
+    if (phase == IRRIG_IDLE && trigger) {
+        bool manualNew = manual && requestId != lastManualRequestId;
+        if (manual) lastManualRequestId = requestId;
+        float water = irrigationDoseMl();
+        uint32_t day = currentDay();
+        time_t epoch = time(nullptr);
+        bool clockOk = epoch >= 100000;
+        uint32_t since = clockOk && lastCycleEpoch ? (uint32_t)epoch - lastCycleEpoch : UINT32_MAX;
+        bool intervalOk = !lastCycleEpoch || (clockOk && since >= irrigationMinIntervalMs() / 1000UL);
+        bool budgetOk = usedMl + water <= irrigationDailyBudgetMl() + 0.5f;
+        if (!IRRIG_AUTO_ENABLED && !manual) strncpy(holdReason, "irigasi otomatis dinonaktifkan", sizeof(holdReason)-1);
+        else if (!fertilizerConfigValid()) strncpy(holdReason, "dosis AB Mix belum divalidasi/diaktifkan", sizeof(holdReason)-1);
+        else if (!clockOk) strncpy(holdReason, "menunggu sinkronisasi waktu", sizeof(holdReason)-1);
+        else if (water <= 0 || water > IRRIG_MAX_CYCLE_ML || irrigationTmean() != irrigationTmean()) strncpy(holdReason, "ETc/Tmean 24 jam belum tersedia", sizeof(holdReason)-1);
+        else if (!manualNew && (!budgetOk || !intervalOk)) strncpy(holdReason, !budgetOk ? "anggaran harian habis" : "jeda minimum belum lewat", sizeof(holdReason)-1);
+        else if (!intervalOk) strncpy(holdReason, "jeda minimum belum lewat sejak siklus terakhir", sizeof(holdReason)-1);
+        else if (!cycleFitsLimits(water, phaseDoseAMlPerL(), phaseDoseBMlPerL())) strncpy(holdReason, "volume/durasi melebihi batas atau kapasitas tangki belum diatur", sizeof(holdReason)-1);
+        else {
+            holdReason[0] = 0; cycleWaterMl = water;
+            cycleDoseAMlPerL = phaseDoseAMlPerL(); cycleDoseBMlPerL = phaseDoseBMlPerL();
+            lastCycleEpoch = (uint32_t)epoch;
+            usedMl += water; if (day) usedDay = day; persistBudget();
+            processResult = "RUNNING";
+            startPhase(IRRIG_FILL, now);
         }
     }
-
-    // ---- DIST: penampungan utama -> tanaman, berhenti pada dosis yang sudah
-    // dihitung. Pompa dinyalakan di startDist(), bukan di sini: fase yang lebih
-    // pendek dari periode controlTask akan menyala lalu mati di iterasi yang
-    // sama kalau pompanya baru dinyalakan setelah pemeriksaan.
-    if (phase == IRRIG_DIST) {
-        if (now - phaseStart >= cycleDoseMs ||
-            now - phaseStart >= IRRIG_PHASE_TIMEOUT_MS) {
-            setDist(false);
-            phase = IRRIG_IDLE;
-            Serial.println("[irigasi] siklus selesai");
-        }
+    if (phase == IRRIG_IDLE && holdReason[0]) processResult = "HELD";
+    if (phase == IRRIG_IDLE && holdReason[0] && strcmp(holdReason, lastPrintedHold) != 0) {
+        strncpy(lastPrintedHold, holdReason, sizeof(lastPrintedHold) - 1);
+        lastPrintedHold[sizeof(lastPrintedHold) - 1] = '\0';
+        Serial.printf("[irigasi] siklus ditahan: %s\n", holdReason);
+    } else if (!holdReason[0]) lastPrintedHold[0] = '\0';
+    if (phase == IRRIG_IDLE) return;
+    if (now - phaseStart >= IRRIG_PHASE_TIMEOUT_MS && phase != IRRIG_SETTLE) { irrigationAbort(); strncpy(holdReason, "timeout pompa; siklus dibatalkan", sizeof(holdReason)-1); return; }
+    if (now - phaseStart < phaseDurationMs) return;
+    switch (phase) {
+        case IRRIG_FILL: startPhase(IRRIG_DOSE_A, now); break;
+        case IRRIG_DOSE_A: startPhase(IRRIG_DOSE_B, now); break;
+        case IRRIG_DOSE_B: startPhase(IRRIG_SETTLE, now); break;
+        case IRRIG_SETTLE: startPhase(IRRIG_DIST, now); break;
+        case IRRIG_DIST: allPumpsOff(); phase = IRRIG_IDLE; processResult = "SUCCESS"; Serial.println("[irigasi] siklus selesai"); break;
+        default: irrigationAbort(); break;
     }
 }

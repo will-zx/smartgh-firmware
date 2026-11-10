@@ -4,30 +4,38 @@
 #include <Arduino.h>
 #include <stdint.h>
 
-// Siklus irigasi: IDLE -> DIST -> IDLE. Satu pompa (DIST) menarik air langsung
-// dari penampungan utama; durasinya = dosis ETc, lalu berhenti sendiri.
-// Dipicu `trigger` (keputusan fuzzy ATAU override manual).
-enum IrrigPhase { IRRIG_IDLE, IRRIG_DIST };
+// Empat pompa, satu pompa aktif pada satu waktu.
+enum IrrigPhase { IRRIG_IDLE, IRRIG_FILL, IRRIG_DOSE_A, IRRIG_DOSE_B, IRRIG_SETTLE, IRRIG_DIST };
 
 // Nama fase ("IDLE", "DIST") untuk log serial dan status_sistem.
 const char* irrigationPhaseName();
 
 // Status irigasi untuk telemetri (dashboard) & log.
 struct IrrigStatus {
+    const char*   phaseName;
+    const char*   result;
+    float         phaseTargetMl;
+    unsigned long phaseDurationMs;
+    float         phaseEstimatedMl;
+    float         doseAMl;
+    float         doseBMl;
+    unsigned long fillDurationMs;
+    unsigned long doseADurationMs;
+    unsigned long doseBDurationMs;
+    unsigned long distDurationMs;
     float         doseMl;          // dosis per siklus (mL)
-    unsigned long doseMs;          // durasi pompa siklus ini (ms)
+    unsigned long doseMs;          // durasi fase DIST (ms)
     float         budgetMl;        // anggaran harian (mL)
     float         usedMl;          // volume yang sudah dialirkan hari ini (mL)
     unsigned long minIntervalMs;   // jeda minimum antar siklus (ms)
     const char*   holdReason;      // alasan permintaan ditahan ("" = tidak ditahan)
 };
 
-// Kumpulkan sampel suhu untuk Tmean (rata-rata sliding 3 jam).
+// Kumpulkan sampel suhu tersaring untuk Tmean harian 24 jam.
 // Dipanggil tiap iterasi controlTask dengan suhu yang SUDAH tervalidasi.
 void irrigationFeedTemp(float temp);
 
-// Tmean = rata-rata suhu sliding BC_TMEAN_BUCKETS menit terakhir (°C).
-// NaN bila belum ada sampel sah sama sekali.
+// Tmean = rerata 24 jam yang sah; NaN sebelum jendela penuh.
 float irrigationTmean();
 
 // ETc (mm/hari) = Kc(fase) * p(bulan) * (0,46*Tmean + 8), dengan p dari
@@ -38,7 +46,7 @@ float calculateEtc();
 // Dosis irigasi dari ETc:
 //   anggaran_harian_ml = ETc * IRRIG_AREA_CM2 * 0,1   (1 mm x 1 cm2 = 0,1 mL)
 //   dosis_ml           = anggaran_harian_ml / IRRIG_CYCLES_PER_DAY
-//   durasi_pompa_ms    = dosis_ml / PUMP_DIST_ML_PER_S * 1000
+//   durasi_pompa_ms    = target_ml / DIST_FLOW_ML_S * 1000
 //   jeda_minimum_ms    = 24 jam / IRRIG_CYCLES_PER_DAY
 float irrigationDailyBudgetMl();
 float irrigationDoseMl();

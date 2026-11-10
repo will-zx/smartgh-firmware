@@ -29,7 +29,9 @@ di ujungnya (`Misting + Blower ON SOILERR NOSYNC`). Dashboard memisahkan
 keduanya, jadi tiap penanda tampil sebagai badge sendiri: `SOILERR` (sensor
 tanah tidak terbaca), `NOSYNC` (jam perangkat belum sinkron), dan `IRRIGOFF`
 (irigasi otomatis dimatikan perangkat sampai debit pompa dikalibrasi, sementara
-perintah manual tetap jalan).
+perintah manual tetap mematuhi safety gate fertigasi). Kini `IRIGOFF` hanya berarti gate otomatis
+dinonaktifkan; alasan tahan siklus (misalnya kapasitas tangki belum diisi)
+dikirim pada `fertigation_result` dan `irigasi_alasan_tahan`.
 
 ## Hardware
 
@@ -61,7 +63,10 @@ pull-up internal.
 | --- | --- | --- | --- |
 | Misting | GPIO 26 | Digital | Penyiram kabut |
 | Blower (2 kipas paralel) | GPIO 25 | PWM 1 kHz, 8-bit | Ventilasi |
-| Pompa DIST | GPIO 32 | Digital | Penampungan utama ke tanaman, 12 V |
+| FILL | GPIO 27 | Digital | Tandon air ke tandon pencampuran |
+| Dosing A | GPIO 13 | Digital | Stok A ke tandon pencampuran |
+| Dosing B | GPIO 14 | Digital | Stok B ke tandon pencampuran |
+| DIST | GPIO 32 | Digital | Tandon pencampuran ke tanaman |
 
 Setiap kanal lewat satu modul **XY-MOS 400 W** (umumnya aktif-HIGH; modul
 aktif-LOW cukup dengan `MOSFET_INVERTED 1` di `config.h`). Hanya blower yang
@@ -71,10 +76,9 @@ proporsional bekerja penuh. Kipas baru mulai berputar sekitar 20 % duty (mati di
 ~13 %), jadi level fuzzy di bawah itu dinaikkan ke `BLOWER_MIN_DUTY` (0,20)
 sebelum ditulis ke PWM.
 
-Debit pompa terukur (gelas ukur + stopwatch, 3×, rata-rata): DIST 31,7 mL/s.
-Kalibrasi irigasi — debit, luas media, dan jumlah siklus per hari — ada di
-`firmware/src/config.h`; dosis dan durasi pompa dihitung dari sana, bukan
-ditulis tetap.
+Debit awal terbaru dari pengukuran pengguna: FILL/DIST 125,36 L/jam dan dosing
+A/B 15,79 L/jam. Belum diverifikasi ulang di hardware; lihat `FERTIGATION.md`
+untuk koreksi debit, wiring, batas dosing, dan prosedur commissioning.
 
 ### Catu daya dan pengkabelan
 
@@ -146,25 +150,23 @@ suhu, kelembapan, tanah, VPD, dan ETc. Aturan disimpan sebagai tabel di
 **VPD dan ETc.** VPD dihitung dengan rumus Tetens (`calcVpd` di
 `RumahHijau.ino`). ETc memakai metode Blaney-Criddle di `irrigation.cpp`: faktor
 p = 0,266–0,284 per bulan (Tabel FAO-24 untuk lintang Semarang, ada di
-`config.h`), Tmean = rata-rata suhu sliding 3 jam, dan Kc mengikuti fase
+`config.h`), suhu tersaring dirata-ratakan pada jendela penuh 24 jam, dan Kc mengikuti fase
 pertumbuhan (0,40 / 0,75 / 1,10 / 1,00 / 0,90). Angka p sebelumnya 0,48 berasal
 dari tafsir rumus FAO-24, bukan dari tabelnya, dan melebih ETo sekitar 65%.
 
-**Siklus irigasi.** Satu pompa, satu fase: `IDLE → DIST → IDLE`. Pompa DIST
-menarik air langsung dari penampungan utama ke tanaman, lalu berhenti sendiri
-setelah durasi dosis habis.
+**Siklus fertigasi.** `IDLE → FILL → DOSE_A → DOSE_B → SETTLE → DIST → IDLE`.
+Volume siklus berasal dari anggaran ETc/dua siklus harian, soil moisture tetap
+menjadi pemicu. Dosis A/B Hydro J berdasarkan fase dikonfigurasi terpisah;
+resep referensi tidak diaktifkan (`FERTILIZER_DOSE_ENABLED=0`, rasio A/B = 0)
+sampai produk dan dosis tervalidasi. Kapasitas terkonfigurasi: tangki campuran
+18.000 mL dan stok A/B masing-masing 6.216 mL; batasnya tidak membaca level fisik.
+Tanpa sensor level/mixer, operator wajib mencegah luapan dan memastikan larutan
+tercampur.
 
-Dosis per siklus bukan timer tetap: dihitung dari ETc harian
-(ETc × luas media 9 000 cm² × 0,1), dibagi jumlah siklus per hari, lalu
-dijadikan durasi pompa DIST lewat debit terukur 31,7 mL/s. Volume harian
-dibatasi anggaran ETc dan antar siklus ada jeda minimum, sehingga air yang
-keluar tidak melebihi kebutuhan tanaman. Permintaan yang ditahan (ETc belum
-tersedia, anggaran habis, jeda belum lewat) dicoba ulang otomatis selama
-trigger tetap menyala, dan alasannya dikirim lewat `irigasi_alasan_tahan`
-supaya operator tahu kenapa air tidak keluar.
-
-Tidak ada pompa pengisian ember atau dosing pupuk, jadi tidak ada sensor TDS
-dan tidak ada fase pemeriksaan larutan.
+Volume dan durasi tiap tahap dihitung dari rate mL/s konfigurasi. Tmean/ETc
+belum sah sampai data 24 jam penuh tersedia; proses fertigasi saat ini juga
+ditahan karena dosis A/B dinonaktifkan. Detail wiring, Kc, dan AB Mix
+ada di [`FERTIGATION.md`](FERTIGATION.md).
 
 **Fail-safe.** Bila sensor tidak valid, keputusan fuzzy untuk irigasi tidak
 dipakai dan siklus irigasi yang sedang berjalan dibatalkan. Override manual

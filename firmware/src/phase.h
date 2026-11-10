@@ -27,6 +27,8 @@ void  phaseDeactivate();              // matikan mode setpoint/fase (kembali pen
 bool  phaseActive();                  // ada VPD target aktif?
 float phaseVpdTarget();               // VPD target saat ini (kPa)
 float phaseKc();                      // Kc fase sekarang (dari nama fase)
+float phaseDoseAMlPerL();
+float phaseDoseBMlPerL();
 PhaseState phaseGet();                // snapshot lengkap (untuk telemetri/DB)
 
 #endif

@@ -50,20 +50,69 @@
 #define BLOWER_MIN_DUTY 0.20f
 #define MOSFET_INVERTED 0
 
-// Pompa irigasi. Satu pompa: DIST (12 V) menarik air langsung dari penampungan
-// utama ke zona tanam — tidak ada pompa pengisian ember atau dosing pupuk.
-// Via modul XY-MOS/MOSFET (hormati MOSFET_INVERTED).
-#define PUMP_DIST          32   // 12V: penampungan utama -> tanaman
+// Empat pompa fertigasi. GPIO27/13/14 tidak dipakai pin map firmware ini;
+// verifikasi terhadap wiring fisik sebelum driver dipasang. Pompa via MOSFET.
+#define PUMP_FILL           27   // tandon air -> tandon pencampuran
+#define PUMP_DOSE_A         13   // stok pupuk A -> tandon pencampuran
+#define PUMP_DOSE_B         14   // stok pupuk B -> tandon pencampuran
+#define PUMP_DIST           32   // tandon pencampuran -> tanaman
 
-// Batas waktu mutlak fase DIST supaya pompa tidak berjalan tanpa henti bila
-// sensor atau waktunya nyangkut.
-#define IRRIG_PHASE_TIMEOUT_MS 180000UL
+// Nilai debit ukur terbaru dari pengguna (belum verifikasi ulang pada alat).
+#define FILL_FLOW_RATE       125.36f // L/hour
+#define DOSE_A_FLOW_RATE      15.79f // L/hour
+#define DOSE_B_FLOW_RATE      15.79f // L/hour
+#define DIST_FLOW_RATE       125.36f // L/hour
+#define FILL_FLOW_CORRECTION  1.0f
+#define DOSE_A_FLOW_CORRECTION 1.0f
+#define DOSE_B_FLOW_CORRECTION 1.0f
+#define DIST_FLOW_CORRECTION  1.0f
+#define L_HOUR_TO_ML_SECOND  (1000.0f / 3600.0f)
+#define FILL_FLOW_ML_S       (FILL_FLOW_RATE * L_HOUR_TO_ML_SECOND * FILL_FLOW_CORRECTION)
+#define DOSE_A_FLOW_ML_S     (DOSE_A_FLOW_RATE * L_HOUR_TO_ML_SECOND * DOSE_A_FLOW_CORRECTION)
+#define DOSE_B_FLOW_ML_S     (DOSE_B_FLOW_RATE * L_HOUR_TO_ML_SECOND * DOSE_B_FLOW_CORRECTION)
+#define DIST_FLOW_ML_S       (DIST_FLOW_RATE * L_HOUR_TO_ML_SECOND * DIST_FLOW_CORRECTION)
 
-// ==== Kalibrasi dosis irigasi (TERUKUR 21 Okt 2026) ====
-// Debit pompa DIST: gelas ukur + stopwatch, 3x, rata-rata = 31,7 mL/s.
-// Cara ukur ulang: letakkan gelas ukur di outlet pompa, nyalakan pompa,
-// catat volume setelah 30 s, ulangi 3x, ambil rata-rata -> mL/detik.
-#define PUMP_DIST_ML_PER_S   31.7f
+// Resep Hydro J sesuai instruksi produk (jangan dipakai untuk merek/formulasi lain).
+#define DOSE_SEMAI_A_ML_PER_L      0.0f
+#define DOSE_SEMAI_B_ML_PER_L      0.0f
+#define DOSE_VEGETATIF_A_ML_PER_L  0.0f
+#define DOSE_VEGETATIF_B_ML_PER_L  0.0f
+#define DOSE_GENERATIF_A_ML_PER_L  0.0f
+#define DOSE_GENERATIF_B_ML_PER_L  0.0f
+#define FERTILIZER_DOSE_ENABLED 0 // tetap OFF sampai formulasi/dosis Hydro J dikonfirmasi
+#define IRRIG_SETTLE_MS      30000UL
+#define IRRIG_PHASE_TIMEOUT_MS 600000UL // 10 menit; 18 L pada rate nominal ≈517 s
+#define IRRIG_MAX_CYCLE_ML   18000.0f
+#define IRRIG_MAX_DOSE_ML    500.0f
+#define MIX_TANK_CAPACITY_ML 18000.0f
+#define STOCK_A_CAPACITY_ML  6216.0f
+#define STOCK_B_CAPACITY_ML  6216.0f
+#define IRRIG_CONTROL_TICK_MS 20UL
+static_assert(PUMP_FILL != PUMP_DOSE_A && PUMP_FILL != PUMP_DOSE_B &&
+              PUMP_FILL != PUMP_DIST && PUMP_DOSE_A != PUMP_DOSE_B &&
+              PUMP_DOSE_A != PUMP_DIST && PUMP_DOSE_B != PUMP_DIST,
+              "Fertigation pump GPIO assignments must be unique");
+static_assert(FILL_FLOW_ML_S > 0 && DOSE_A_FLOW_ML_S > 0 &&
+              DOSE_B_FLOW_ML_S > 0 && DIST_FLOW_ML_S > 0,
+              "All configured pump flow rates must be positive");
+static_assert(PUMP_FILL != MOSFET_MIST && PUMP_FILL != BLOWER_PIN &&
+              PUMP_DOSE_A != MOSFET_MIST && PUMP_DOSE_A != BLOWER_PIN &&
+              PUMP_DOSE_B != MOSFET_MIST && PUMP_DOSE_B != BLOWER_PIN &&
+              PUMP_DIST != MOSFET_MIST && PUMP_DIST != BLOWER_PIN &&
+              PUMP_FILL != I2C_SDA && PUMP_FILL != I2C_SCL &&
+              PUMP_DOSE_A != I2C_SDA && PUMP_DOSE_A != I2C_SCL &&
+              PUMP_DOSE_B != I2C_SDA && PUMP_DOSE_B != I2C_SCL &&
+              PUMP_DIST != I2C_SDA && PUMP_DIST != I2C_SCL,
+              "Pump GPIO conflicts with another configured actuator or I2C");
+static_assert(PUMP_FILL != 34 && PUMP_FILL != 33 && PUMP_FILL != 39 &&
+              PUMP_DOSE_A != 34 && PUMP_DOSE_A != 33 && PUMP_DOSE_A != 39 &&
+              PUMP_DOSE_B != 34 && PUMP_DOSE_B != 33 && PUMP_DOSE_B != 39 &&
+              PUMP_DIST != 34 && PUMP_DIST != 33 && PUMP_DIST != 39 &&
+              PUMP_FILL != 5 && PUMP_FILL != 18 && PUMP_FILL != 19 && PUMP_FILL != 23 &&
+              PUMP_DOSE_A != 5 && PUMP_DOSE_A != 18 && PUMP_DOSE_A != 19 && PUMP_DOSE_A != 23 &&
+              PUMP_DOSE_B != 5 && PUMP_DOSE_B != 18 && PUMP_DOSE_B != 19 && PUMP_DOSE_B != 23 &&
+              PUMP_DIST != 5 && PUMP_DIST != 18 && PUMP_DIST != 19 && PUMP_DIST != 23,
+              "Pump GPIO conflicts with configured soil ADC or SD SPI");
 // Luas wetted zona: 10 polybag 30x30 cm, 2 baris -> 900 cm2 per tanaman
 // (asumsi: permukaan atas polibag = area wetted), total 9000 cm2.
 // Cara ukur ulang: hitung luas dasar tiap polybag (pi * d^2 / 4 dengan d =
@@ -74,12 +123,11 @@
 // Cara tetapkan: dari kebutuhan harian (ETc x area) dan debit pompa -> bagi
 // jadi beberapa dosis kecil supaya tidak ada siram besar sekaligus.
 #define IRRIG_CYCLES_PER_DAY 2
-// Gate irigasi otomatis: 1 = keputusan fuzzy boleh menyalakan pompa.
-// 0 = irigasi otomatis dimatikan (siklus manual tetap bisa); dipakai sebelum
-// debit & luas media tersedia. Badge status " IRIGOFF" muncul saat 0.
+// Gate keputusan fuzzy: 0 menahan otomatis. Manual tetap melalui pemeriksaan
+// dosis, waktu, kapasitas tangki, dan batas volume yang sama.
 #define IRRIG_AUTO_ENABLED   1
-// Catatan: asumsi efisiensi irigasi 1,0 (volume keluar pompa = volume sampai
-// media), jadi TIDAK ada konstanta efisiensi terpisah.
+// Efisiensi aplikasi belum diukur; 1.0 adalah nilai awal net=gross, dapat
+// diubah setelah uji lapangan. Gross volume = net ETc / efficiency.
 
 // MicroSD (SPI, pin default VSPI ESP32: SCK 18, MISO 19, MOSI 23, CS 5).
 // Backup lokal: seluruh log + antrian saat push Firebase gagal.
@@ -142,8 +190,8 @@
 // difference" (bulan Selatan memakai kolom Utara yang digeser 6 bulan).
 // Baris mentah 5 LS dan 10 LS hanya berselisih 0.01, jadi galat
 // interpolasinya kecil.
-// TODO: PERIKSA ULANG ke Table 1 sebelum dikutip di laporan, karena ini
-// hasil interpolasi, bukan bacaan langsung.
+// Nilai hasil interpolasi Table 4 FAO training manual (lihat FERTIGATION.md),
+// bukan bacaan langsung pada lintang 7 derajat.
 static const float SUN_P_MONTH[12] = {
     0.284f, // Januari
     0.280f, // Februari
@@ -161,14 +209,17 @@ static const float SUN_P_MONTH[12] = {
 // Konstanta rumus Blaney-Criddle: ETo = p * (BC_T_COEF * Tmean + BC_T_CONST).
 #define BC_T_COEF        0.46f
 #define BC_T_CONST       8.0f
-// Tmean = rata-rata suhu sliding 3 jam (ember 1 menit). FAO-56 menetapkan
+// Tmean = rerata periode 24 jam (ember 1 menit); baru sah setelah jendela
+// 24 jam penuh. Blaney-Criddle daily approximation harus memakai rerata harian.
+// FAO-56 menetapkan
 // Penman-Monteith sebagai metode standar; Blaney-Criddle (FAO-24) dikalibrasi
 // untuk periode panjang, jadi hasil di sini PENDEKATAN PRAKTIS (bukan ETo
 // standar) dan harus diberi label begitu di log maupun telemetri.
 #define BC_TMEAN_BUCKET_MS   60000UL   // 1 menit per ember
-#define BC_TMEAN_BUCKETS     180      // 180 ember x 1 menit = 3 jam sliding
+#define BC_TMEAN_BUCKETS     1440     // 24 jam x 1 menit
 // Batas atas ETo (mm/hari) supaya nilai ekstrem tidak dipakai.
 #define MAX_ET0        12.0
+#define IRRIG_EFFICIENCY 1.0f // tidak ada data efisiensi lapangan; kalibrasikan bila diketahui
 
 // Kc per fase pertumbuhan. Sumber: Tabel 2.1 proposal ("Nilai koefisien
 // tanaman (Kc) pada tanaman cabai merah", data Supriadi et al. [10]):

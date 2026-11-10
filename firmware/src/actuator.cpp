@@ -27,11 +27,12 @@ void initActuators() {
     ledcSetup(BLOWER_CH, BLOWER_FREQ, BLOWER_RES);  // 1 kHz: spek XY-MOS 0-20 kHz
     ledcAttachPin(BLOWER_PIN, BLOWER_CH);
 
-    // Pompa irigasi: satu pompa DIST digerakkan state machine irrigation.cpp.
-    // Diset OUTPUT + LOW di sini supaya mati sampai siklus menyalakannya,
-    // termasuk saat boot atau reset di tengah siklus.
-    pinMode(PUMP_DIST, OUTPUT);
-    digitalWrite(PUMP_DIST, MOSFET_INVERTED ? HIGH : LOW);   // LOW = off (aktif-HIGH)
+    // Semua pompa default OFF sebelum task kontrol mulai.
+    const uint8_t pumps[] = {PUMP_FILL, PUMP_DOSE_A, PUMP_DOSE_B, PUMP_DIST};
+    for (uint8_t pin : pumps) {
+        digitalWrite(pin, MOSFET_INVERTED ? HIGH : LOW);
+        pinMode(pin, OUTPUT);
+    }
 
     setActuators(false, false, 0.0);
 }

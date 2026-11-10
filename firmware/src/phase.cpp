@@ -53,8 +53,9 @@ static uint32_t elapsedSec(bool* known) {
 // (Vegetatif) supaya perilaku lama tetap berlaku.
 static float phaseKcUnlocked() {
     const char* n = s_name;
-    if (strcasestr(n, "awal"))     return KC_AWAL;
+    if (strcasestr(n, "semai") || strcasestr(n, "awal")) return KC_AWAL;
     if (strcasestr(n, "vegetatif"))return KC_VEGETATIF;
+    if (strcasestr(n, "generatif")) return KC_PEMBUNGAAN;
     if (strcasestr(n, "pembungaan") || strcasestr(n, "bunga")) return KC_PEMBUNGAAN;
     if (strcasestr(n, "pemuliaan") || strcasestr(n, "buah"))  return KC_PEMULIAAN_BUAH;
     if (strcasestr(n, "panen"))    return KC_PANEN;
@@ -107,7 +108,8 @@ void phaseSetName(const char* name) {
     unlock();
     prefs.putString("ph_name", stored);
     // Log Kc ikut berubah supaya bisa dibuktikan dari log port.
-    Serial.printf("[fase] fase: %s (Kc %.2f)\n", stored, phaseKc());
+    Serial.printf("[fase] %s | Kc %.2f | dosis A/B %.2f/%.2f mL/L\n",
+                  stored, phaseKc(), phaseDoseAMlPerL(), phaseDoseBMlPerL());
 }
 
 void phaseSetDuration(uint32_t seconds) {
@@ -154,6 +156,22 @@ float phaseKc() {
     unlock();
     return kc;
 }
+
+static float phaseDoseUnlocked(bool nutrientB) {
+    const char* n = s_name;
+    if (strcasestr(n, "semai") || strcasestr(n, "awal"))
+        return nutrientB ? DOSE_SEMAI_B_ML_PER_L : DOSE_SEMAI_A_ML_PER_L;
+    if (strcasestr(n, "vegetatif"))
+        return nutrientB ? DOSE_VEGETATIF_B_ML_PER_L : DOSE_VEGETATIF_A_ML_PER_L;
+    if (strcasestr(n, "generatif") || strcasestr(n, "pembungaan") ||
+        strcasestr(n, "bunga") || strcasestr(n, "buah") || strcasestr(n, "panen") ||
+        strcasestr(n, "pemasakan"))
+        return nutrientB ? DOSE_GENERATIF_B_ML_PER_L : DOSE_GENERATIF_A_ML_PER_L;
+    return NAN; // unknown phase must never pick an assumed fertilizer dose
+}
+
+float phaseDoseAMlPerL() { lock(); float dose = phaseDoseUnlocked(false); unlock(); return dose; }
+float phaseDoseBMlPerL() { lock(); float dose = phaseDoseUnlocked(true); unlock(); return dose; }
 
 PhaseState phaseGet() {
     // Penambal sekali jalan: NVS perangkat lama bisa berisi ph_epoch = 0

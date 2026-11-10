@@ -1,5 +1,9 @@
 # Simulasi logika fuzzy (Octave)
 
+`irrig_sim.m` is a legacy conceptual model with old TDS/check phases and fixed
+pump timing; it is not a test of the current firmware. Use `FERTIGATION.md` for
+the active state machine and commissioning checks.
+
 Replika mesin fuzzy yang berjalan di `firmware/src/fuzzy.cpp`, dipakai untuk
 menghitung duty cycle PWM blower pada berbagai kondisi dan membuat grafik.
 

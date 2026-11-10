@@ -36,7 +36,7 @@ static HTTPClient http;
 //   vpd              kPa     defisit tekanan uap (Tetens, dari T & RH)
 //   etc              mm/hari kebutuhan air tanaman (Blaney-Criddle x Kc fase)
 //   et0              mm/hari ALIAS LAMA dari "etc" (deprecated, hapus nanti)
-//   tmean_c          °C      Tmean sliding 3 jam yang dipakai menghitung ETc
+//   tmean_c          °C      Tmean sliding 24 jam; NaN sebelum jendela penuh
 //   kc_aktif         -       Kc fase berjalan (Tabel 2.1 proposal)
 //   blower_level     0..1    duty blower yang dijalankan (PWM 1 kHz)
 //   misting          bool    pompa misting hidup
@@ -332,7 +332,10 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
     // alias lama supaya dashboard yang belum migrate tidak ikut rusak;
     // hapus "et0" setelah sesi web memakai "etc".
     putNum(doc, "etc", etc);
-    putNum(doc, "et0", etc);
+    putNum(doc, "etc_mm_day", etc);
+    float eto = phase.kc > 0.0f ? etc / phase.kc : NAN;
+    putNum(doc, "et0_mm_day", eto);
+    putNum(doc, "et0", etc); // legacy dashboard alias retained for compatibility
     // Keluaran fuzzy = perintah aktuator yang dijalankan. Dashboard memakai
     // angka ini, bukan menguraikan string status_sistem.
     putNum(doc, "blower_level", blowerLevel);
@@ -373,6 +376,19 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
     putNum(doc, "tmean_c", tmean);
     // Telemetri irigasi: dosis & durasi siklus, anggaran harian, volume
     // terpakai hari ini, dan jeda minimum (lihat irrigation.h).
+    doc["fertigation_phase"] = irig.phaseName ? irig.phaseName : "IDLE";
+    doc["fertigation_result"] = irig.result ? irig.result : "IDLE";
+    putNum(doc, "fertigation_target_ml", irig.phaseTargetMl);
+    putNum(doc, "fertigation_phase_duration_ms", (float)irig.phaseDurationMs);
+    putNum(doc, "fertigation_estimated_ml", irig.phaseEstimatedMl);
+    putNum(doc, "fertigation_dose_a_ml", irig.doseAMl);
+    putNum(doc, "fertigation_dose_b_ml", irig.doseBMl);
+    putNum(doc, "fertigation_fill_duration_ms", (float)irig.fillDurationMs);
+    putNum(doc, "fertigation_dose_a_duration_ms", (float)irig.doseADurationMs);
+    putNum(doc, "fertigation_dose_b_duration_ms", (float)irig.doseBDurationMs);
+    putNum(doc, "fertigation_dist_duration_ms", (float)irig.distDurationMs);
+    putNum(doc, "fertigation_kc", phase.kc);
+    putNum(doc, "fertigation_soil_pct", soil);
     putNum(doc, "irigasi_dosis_ml", irig.doseMl);
     putNum(doc, "irigasi_durasi_ms", (float)irig.doseMs);
     putNum(doc, "irigasi_anggaran_ml", irig.budgetMl);
