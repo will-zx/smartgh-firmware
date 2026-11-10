@@ -273,7 +273,7 @@ static void controlTask(void* arg) {
         // Filter EMA suhu/RH (input VPD) & soil agar VPD dan keputusan irigasi stabil.
         // Suhu/RH wajib lewat guard valid: readSensors bisa mengembalikan NaN dan
         // NaN yang masuk EMA merusak nilainya secara permanen. Soil tidak - probe
-        // soil kanal analog terpisah yang tetap terbaca walau SHT31 mati.
+        // soil kanal analog terpisah yang tetap terbaca walau DHT22 mati.
         if (sensorData.valid) {
             sensorData.temperature = emaUpdate(tempFilter, sensorData.temperature);
             sensorData.humidity    = emaUpdate(humFilter, sensorData.humidity);
@@ -362,7 +362,7 @@ static void controlTask(void* arg) {
             millis() - lastFailPrint > 5000) {
             lastFailPrint = millis();
             if (!sensorData.valid) {
-                Serial.println("[!] Sensor SHT31 tidak terhubung - cek wiring");
+                Serial.println("[!] Sensor DHT22 tidak terbaca - cek wiring/pull-up");
                 Serial.printf("[!] Sensor error: %s\n", getSensorError());
             }
             if (!sensorData.soilValid) {
@@ -383,11 +383,11 @@ static void controlTask(void* arg) {
         // Fail-safe: tanpa feedback sensor tidak ada regulate — aktuator dipatikan
         // semuanya (override manual ikut, karena misting/irigasi tidak punya
         // timeout sendiri) dan siklus irigasi yang berjalan dihentikan. Tanpa ini
-        // nilai fuzzy terakhir dibekukan selamanya, mis. SHT31 dicabut di tengah
+        // nilai fuzzy terakhir dibekukan selamanya, mis. DHT22 dicabut di tengah
         // siklus -> misting/irigasi tetap nyala tanpa batas.
         bool mist = sensorData.valid && fuzzyOut.mistOn;
         // Keputusan irigasi fuzzy HANYA dipakai bila:
-        //  - sensor SHT31 valid (butuh T/RH untuk ETc),
+        //  - sensor DHT22 valid (butuh T/RH untuk ETc),
         //  - probe tanah valid (kalau tidak, angka 0 %/100 % palsu jadi dasar
         //    keputusan irigasi),
         //  - irigasi otomatis diizinkan (debit pompa & luas media belum
@@ -429,7 +429,7 @@ static void controlTask(void* arg) {
         OverrideState ov = controlOverrides();
         setActuators(mist, blower, blowerLevel);
 
-        // Fertigasi empat pompa: sensor SHT31 mati = batalkan siklus
+        // Fertigasi empat pompa: sensor DHT22 mati = batalkan siklus
         // (fail-safe penuh: tanpa T/RH tidak ada ETc/VPD yang sah, override
         // manual pun tidak boleh mengecualikan device dari fail-safe ini);
         // selain itu serah ke irrigationUpdate() yang memutuskan mulai/tidak
@@ -653,9 +653,9 @@ void setup() {
 
     i2cBusInit();     // mutex bus I2C LCD (dua task)
     initLcd();
-    lcdScrollStart(); // task marquee baris status (core 0, prio 1)
     initSdLogger();
     initSensor();
+    lcdScrollStart(); // task marquee baris status (core 0, prio 1)
     emaInit(tempFilter, EMA_ALPHA_TEMP);
     emaInit(humFilter, EMA_ALPHA_HUM);
     for (int i = 0; i < SOIL_COUNT; i++) emaInit(soilFilter[i], EMA_ALPHA_SOIL);
