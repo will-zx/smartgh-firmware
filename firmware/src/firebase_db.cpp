@@ -36,7 +36,8 @@ static HTTPClient http;
 //   vpd              kPa     defisit tekanan uap (Tetens, dari T & RH)
 //   etc              mm/hari kebutuhan air tanaman (Blaney-Criddle x Kc fase)
 //   et0              mm/hari ALIAS LAMA dari "etc" (deprecated, hapus nanti)
-//   tmean_c          °C      Tmean sliding 24 jam; NaN sebelum jendela penuh
+//   tmean_c          °C      Tmean efektif: rerata 24 jam atau fallback suhu
+//   tmean_fallback   bool    true bila tmean_c masih memakai suhu saat ini
 //   kc_aktif         -       Kc fase berjalan (Tabel 2.1 proposal)
 //   blower_level     0..1    duty blower yang dijalankan (PWM 1 kHz)
 //   misting          bool    pompa misting hidup
@@ -376,6 +377,7 @@ bool pushSensorLog(float temperature, float humidity, float soil, float soil2, f
     // (pendekatan praktis, bukan ETo standar FAO-56).
     doc["kc_aktif"] = phase.kc;
     putNum(doc, "tmean_c", tmean);
+    doc["tmean_fallback"] = irig.tmeanFallback;
     // Telemetri irigasi: dosis & durasi siklus, anggaran harian, volume
     // terpakai hari ini, dan jeda minimum (lihat irrigation.h).
     doc["fertigation_phase"] = irig.phaseName ? irig.phaseName : "IDLE";

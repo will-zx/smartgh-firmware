@@ -24,6 +24,9 @@ static float temperatureSum = 0;
 static uint16_t temperatureCount = 0;
 static uint32_t temperatureBucket = UINT32_MAX;
 static bool temperatureInit = false;
+static float lastValidTemp = NAN;
+static uint32_t lastValidTempMs = 0;
+static bool hasLastValidTemp = false;
 static uint32_t lastCycleEpoch = 0;
 static char lastPrintedHold[sizeof(holdReason)] = "";
 
@@ -114,14 +117,32 @@ static bool cycleFitsLimits(float waterMl, float doseAMlPerL, float doseBMlPerL)
     return true;
 }
 
-float calculateEtc() {
+static bool tmeanFallbackFresh() {
+    return hasLastValidTemp && isfinite(lastValidTemp) &&
+        (millis() - lastValidTempMs) <= TMEAN_FALLBACK_MAX_AGE_MS;
+}
+
+float irrigationEffectiveTmean() {
     float tmean = irrigationTmean();
+    if (isfinite(tmean)) return tmean;
+    return tmeanFallbackFresh() ? lastValidTemp : NAN;
+}
+
+bool irrigationTmeanIsFallback() {
+    return !isfinite(irrigationTmean()) && tmeanFallbackFresh();
+}
+
+float calculateEtc() {
+    float tmean = irrigationEffectiveTmean();
     if (!isfinite(tmean)) return 0;
     float eto = constrain(pFactorSaatIni() * (BC_T_COEF * tmean + BC_T_CONST), 0.0f, MAX_ET0);
     return eto * phaseKc();
 }
 void irrigationFeedTemp(float temp) {
     if (!isfinite(temp)) return;
+    lastValidTemp = temp;
+    lastValidTempMs = millis();
+    hasLastValidTemp = true;
     if (!temperatureInit) {
         for (uint16_t i = 0; i < BC_TMEAN_BUCKETS; ++i) temperatures[i] = NAN;
         temperatureBucket = millis() / BC_TMEAN_BUCKET_MS;
@@ -159,6 +180,7 @@ unsigned long irrigationDoseMs() { return durationMs(irrigationDoseMl(), DIST_FL
 unsigned long irrigationMinIntervalMs() { return IRRIG_CYCLES_PER_DAY > 0 ? 86400000UL / IRRIG_CYCLES_PER_DAY : 0; }
 IrrigStatus irrigationStatus() {
     IrrigStatus s{}; s.budgetMl = irrigationDailyBudgetMl(); s.usedMl = usedMl;
+    s.tmeanFallback = irrigationTmeanIsFallback();
     s.phaseName = irrigationPhaseName();
     s.result = processResult;
     s.phaseTargetMl = phase == IRRIG_IDLE || phase == IRRIG_SETTLE ? 0 : phaseVolume(phase);
@@ -230,7 +252,8 @@ void irrigationUpdate(bool trigger, bool manual, uint32_t requestId) {
         if (!IRRIG_AUTO_ENABLED && !manual) strncpy(holdReason, "irigasi otomatis dinonaktifkan", sizeof(holdReason)-1);
         else if (!fertilizerConfigValid()) strncpy(holdReason, "dosis AB Mix belum divalidasi/diaktifkan", sizeof(holdReason)-1);
         else if (!clockOk) strncpy(holdReason, "menunggu sinkronisasi waktu", sizeof(holdReason)-1);
-        else if (water <= 0 || water > IRRIG_MAX_CYCLE_ML || irrigationTmean() != irrigationTmean()) strncpy(holdReason, "ETc/Tmean 24 jam belum tersedia", sizeof(holdReason)-1);
+        else if (water <= 0 || !isfinite(irrigationEffectiveTmean())) strncpy(holdReason, "ETc/Tmean belum tersedia", sizeof(holdReason)-1);
+        else if (water > IRRIG_MAX_CYCLE_ML) strncpy(holdReason, "volume siklus melebihi batas", sizeof(holdReason)-1);
         else if (!manualNew && (!budgetOk || !intervalOk)) strncpy(holdReason, !budgetOk ? "anggaran harian habis" : "jeda minimum belum lewat", sizeof(holdReason)-1);
         else if (!intervalOk) strncpy(holdReason, "jeda minimum belum lewat sejak siklus terakhir", sizeof(holdReason)-1);
         else if (!cycleFitsLimits(water, phaseDoseAMlPerL(), phaseDoseBMlPerL())) strncpy(holdReason, "volume/durasi melebihi batas atau kapasitas tangki belum diatur", sizeof(holdReason)-1);

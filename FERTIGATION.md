@@ -45,8 +45,11 @@ before connecting drivers; these pins were free in the repository mapping only.
 The firmware uses `ETo = p × (0.46 × Tmean + 8)` and `ETc = Kc × ETo`.
 `p` is the FAO-24 monthly table value interpolated for about 7° S (Semarang);
 the method is a Blaney–Criddle approximation, not FAO-56 reference ETo.
-Filtered DHT22 temperature samples enter 1-minute buckets; irrigation is held until a full
-24-hour window exists. Daily net depth is converted using `1 mm × 1 m² = 1 L`,
+Filtered DHT22 temperature samples enter 1-minute buckets. Until the full
+24-hour window exists, ETc uses the latest fresh filtered temperature as a
+provisional Tmean and marks the record with `tmean_fallback=true`; the fallback
+expires after 5 minutes without a valid sample. Daily net depth is converted
+using `1 mm × 1 m² = 1 L`,
 the configured 9,000 cm² area, application efficiency, and two daily cycles.
 Soil-moisture/fuzzy demand remains the trigger; ETc supplies the volume budget.
 Check the configured area against the wetted area actually served.

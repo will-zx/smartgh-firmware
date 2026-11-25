@@ -452,7 +452,7 @@ static void controlTask(void* arg) {
         float rSoil3 = sensorData.soilPct[2];
         float rVpd  = sensorData.valid ? vpdValue : NAN;
         float rEtc  = sensorData.valid ? etcValue : NAN;
-        float rTmean = irrigationTmean();
+        float rTmean = irrigationEffectiveTmean();
 
         // Label status dipakai bersama oleh serial, CSV SD, LCD, dan RTDB —
         // satu definisi supaya yang dibaca operator sama di semua tempat.
@@ -462,8 +462,9 @@ static void controlTask(void* arg) {
 
         // Serial: SELALU cetak (walau sensor invalid) supaya kegagalan terlihat
         // di log port, bukan hanya diam di RTDB.
-        Serial.printf("T:%.1fC H:%.1f%% Soil:%.1f%% VPD:%.2fkPa ETc:%.1fmm Tmean:%.1f [%s]",
-                      rTemp, rHum, rSoil, rVpd, rEtc, rTmean, statusTxt);
+        Serial.printf("T:%.1fC H:%.1f%% Soil:%.1f%% VPD:%.2fkPa ETc:%.1fmm Tmean:%.1f%s [%s]",
+                      rTemp, rHum, rSoil, rVpd, rEtc, rTmean,
+                      irig.tmeanFallback ? "*" : "", statusTxt);
         Serial.printf(" Mist:%s Irig:%s Blower:%s(lv%.0f%%) Fase:%s Kc:%.2f VPDtgt:%.2f",
                       mist ? "ON" : "OFF", irigasiRunning ? "RUN" : "OFF",
                       blower ? "ON" : "OFF", blowerLevel * 100.0,

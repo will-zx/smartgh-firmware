@@ -28,6 +28,7 @@ struct IrrigStatus {
     float         budgetMl;        // anggaran harian (mL)
     float         usedMl;          // volume yang sudah dialirkan hari ini (mL)
     unsigned long minIntervalMs;   // jeda minimum antar siklus (ms)
+    bool          tmeanFallback;   // ETc memakai suhu saat ini, bukan rerata 24 jam
     const char*   holdReason;      // alasan permintaan ditahan ("" = tidak ditahan)
 };
 
@@ -37,6 +38,11 @@ void irrigationFeedTemp(float temp);
 
 // Tmean = rerata 24 jam yang sah; NaN sebelum jendela penuh.
 float irrigationTmean();
+
+// Tmean efektif untuk ETc: memakai rerata 24 jam bila sudah siap, atau suhu
+// EMA terakhir yang masih segar sebagai fallback sampai jendela penuh.
+float irrigationEffectiveTmean();
+bool irrigationTmeanIsFallback();
 
 // ETc (mm/hari) = Kc(fase) * p(bulan) * (0,46*Tmean + 8), dengan p dari
 // Tabel FAO-24 untuk lintang Semarang (SUN_P_MONTH di config.h).

@@ -224,6 +224,10 @@ static const float SUN_P_MONTH[12] = {
 // standar) dan harus diberi label begitu di log maupun telemetri.
 #define BC_TMEAN_BUCKET_MS   60000UL   // 1 menit per ember
 #define BC_TMEAN_BUCKETS     1440     // 24 jam x 1 menit
+// Sebelum jendela 24 jam terisi, ETc memakai suhu EMA terakhir yang valid
+// sebagai Tmean sementara. Fallback hanya dipakai selama sampel masih segar;
+// setelah itu dosis kembali 0 dan alasan tahan dilaporkan.
+#define TMEAN_FALLBACK_MAX_AGE_MS 300000UL // 5 menit
 // Batas atas ETo (mm/hari) supaya nilai ekstrem tidak dipakai.
 #define MAX_ET0        12.0
 #define IRRIG_EFFICIENCY 1.0f // tidak ada data efisiensi lapangan; kalibrasikan bila diketahui

@@ -155,7 +155,9 @@ suhu, kelembapan, tanah, VPD, dan ETc. Aturan disimpan sebagai tabel di
 `RumahHijau.ino`). ETc memakai metode Blaney-Criddle di `irrigation.cpp`: faktor
 p = 0,266–0,284 per bulan (Tabel FAO-24 untuk lintang Semarang, ada di
 `config.h`), suhu tersaring dirata-ratakan pada jendela penuh 24 jam, dan Kc mengikuti fase
-pertumbuhan (0,40 / 0,75 / 1,10 / 1,00 / 0,90). Angka p sebelumnya 0,48 berasal
+pertumbuhan (0,40 / 0,75 / 1,10 / 1,00 / 0,90). Sebelum jendela 24 jam terisi,
+ETc memakai suhu EMA terakhir yang masih segar sebagai Tmean sementara dan
+menandainya `tmean_fallback`. Angka p sebelumnya 0,48 berasal
 dari tafsir rumus FAO-24, bukan dari tabelnya, dan melebih ETo sekitar 65%.
 
 **Siklus fertigasi.** `IDLE → FILL → DOSE_A → DOSE_B → SETTLE → DIST → IDLE`.
@@ -168,10 +170,11 @@ dipakai. Kapasitas terkonfigurasi: tangki campuran
 Tanpa sensor level/mixer, operator wajib mencegah luapan dan memastikan larutan
 tercampur.
 
-Volume dan durasi tiap tahap dihitung dari rate mL/s konfigurasi. Tmean/ETc
-belum sah sampai data 24 jam penuh tersedia; siklus fertigasi baru bisa mulai
-setelah Tmean tersedia dan semua gate keamanan lolos. Detail wiring, Kc, dan
-AB Mix ada di [`FERTIGATION.md`](FERTIGATION.md).
+Volume dan durasi tiap tahap dihitung dari rate mL/s konfigurasi. Sebelum
+Tmean 24 jam tersedia, ETc memakai suhu terakhir yang valid sebagai fallback
+sementara (maksimal 5 menit sejak sampel terakhir); setelah itu dosis kembali 0
+sampai sensor pulih. Siklus fertigasi tetap harus lolos semua gate keamanan.
+Detail wiring, Kc, dan AB Mix ada di [`FERTIGATION.md`](FERTIGATION.md).
 
 **Fail-safe.** Bila sensor tidak valid, keputusan fuzzy dimatikan, tetapi
 override manual misting/blower/irigasi tetap berjalan sampai kedaluwarsa karena
