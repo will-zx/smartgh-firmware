@@ -15,10 +15,10 @@ Each pump phase is capped at 600 s, water per cycle at 18 L, each stock dose at
 capacities: mixing tank 18,000 mL; stock A and B 6,216 mL each. These are
 software limits only; without level sensors, actual fill levels are not sensed.
 
-The tank capacities and timeout are configured, but nutrient dosing is
-deliberately disabled: `FERTILIZER_DOSE_ENABLED=0` and all A/B rates are zero.
-This prevents a cycle until the product formulation/dose is validated; the
-provided Hydro J dose remains documented below as reference only.
+The tank capacities and timeout are configured, and nutrient dosing is enabled
+with the Hydro J reference rates below: `FERTILIZER_DOSE_ENABLED=1`. Confirm the
+product identity and stock preparation before running nutrients; the rates are
+valid only for the matching Hydro J product and concentration.
 
 ## GPIO and pump rates
 
@@ -85,8 +85,8 @@ Pereira, Raes & Smith (1998), FAO Irrigation and Drainage Paper 56,
 ## AB Mix recipe and limits
 
 The supplied Hydro J product page specifies equal A/B stock volumes by crop
-stage. The values below are reference only and are currently disabled in
-firmware. The product page URL is
+stage. The values below are enabled in firmware (`FERTILIZER_DOSE_ENABLED=1`).
+The product page URL is
 [Hydro J Nutrisi Cabe 25 L Pekatan 1 kg](https://bibitonline.com/produk/hydro-j-nutrisi-cabe-25-l-pekatan-1-kg).
 The page could not be fetched independently during this run; dose text below is
 the user-provided label guidance and applies only to the matching product and
@@ -94,9 +94,9 @@ stock concentration.
 
 | Phase selected in Firebase | Stock A | Stock B | Implemented mapping |
 |---|---:|---:|---|
-| Semai / Awal | 3 mL/L | 3 mL/L | disabled (`0`) |
-| Vegetatif | 5 mL/L | 5 mL/L | disabled (`0`) |
-| Generatif, Pembungaan, Buah, Panen | 7 mL/L | 7 mL/L | disabled (`0`) |
+| Semai / Awal | 3 mL/L | 3 mL/L | enabled (`3`) |
+| Vegetatif | 5 mL/L | 5 mL/L | enabled (`5`) |
+| Generatif, Pembungaan, Buah, Panen | 7 mL/L | 7 mL/L | enabled (`7`) |
 
 Unknown phase names fail the dosing validation instead of silently selecting a
 recipe. Dose is calculated separately as `water_liters × phase mL/L`; A and B
@@ -124,9 +124,9 @@ not measure EC/pH or tank level. Never use these rates with a different AB Mix.
 3. Calibrate FILL and DIST independently into a graduated container; use small
    graduated syringes/cylinders for dosing pumps. Update the four
    correction factors and repeat at installed head/voltage.
-4. Confirm Hydro J product/stock before changing the dosing gate/rates. Current
-   dosing is disabled; the configured tank limits are 18,000 mL mixing and
-   6,216 mL for each stock tank.
+4. Confirm Hydro J product/stock before running nutrients. Dosing is enabled at
+   the reference rates above; the configured tank limits are 18,000 mL mixing
+   and 6,216 mL for each stock tank.
 5. Confirm GPIO27 fills the mixing tank, 13/14 are the correct A/B lines, and
    GPIO32 distributes to the crop. Verify no outlets or tanks can overflow;
    this firmware has no level feedback.

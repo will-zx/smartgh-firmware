@@ -160,17 +160,18 @@ dari tafsir rumus FAO-24, bukan dari tabelnya, dan melebih ETo sekitar 65%.
 
 **Siklus fertigasi.** `IDLE → FILL → DOSE_A → DOSE_B → SETTLE → DIST → IDLE`.
 Volume siklus berasal dari anggaran ETc/dua siklus harian, soil moisture tetap
-menjadi pemicu. Dosis A/B Hydro J berdasarkan fase dikonfigurasi terpisah;
-resep referensi tidak diaktifkan (`FERTILIZER_DOSE_ENABLED=0`, rasio A/B = 0)
-sampai produk dan dosis tervalidasi. Kapasitas terkonfigurasi: tangki campuran
+menjadi pemicu. Dosis A/B Hydro J berdasarkan fase diaktifkan sesuai panduan
+produk (`FERTILIZER_DOSE_ENABLED=1`): Semai/Awal 3 mL/L, Vegetatif 5 mL/L,
+Generatif/Pembungaan/Buah/Panen 7 mL/L. Verifikasi produk dan stok sebelum
+dipakai. Kapasitas terkonfigurasi: tangki campuran
 18.000 mL dan stok A/B masing-masing 6.216 mL; batasnya tidak membaca level fisik.
 Tanpa sensor level/mixer, operator wajib mencegah luapan dan memastikan larutan
 tercampur.
 
 Volume dan durasi tiap tahap dihitung dari rate mL/s konfigurasi. Tmean/ETc
-belum sah sampai data 24 jam penuh tersedia; proses fertigasi saat ini juga
-ditahan karena dosis A/B dinonaktifkan. Detail wiring, Kc, dan AB Mix
-ada di [`FERTIGATION.md`](FERTIGATION.md).
+belum sah sampai data 24 jam penuh tersedia; siklus fertigasi baru bisa mulai
+setelah Tmean tersedia dan semua gate keamanan lolos. Detail wiring, Kc, dan
+AB Mix ada di [`FERTIGATION.md`](FERTIGATION.md).
 
 **Fail-safe.** Bila sensor tidak valid, keputusan fuzzy dimatikan, tetapi
 override manual misting/blower/irigasi tetap berjalan sampai kedaluwarsa karena

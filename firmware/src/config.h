@@ -81,13 +81,13 @@
 #define DIST_FLOW_ML_S       (DIST_FLOW_RATE * L_HOUR_TO_ML_SECOND * DIST_FLOW_CORRECTION)
 
 // Resep Hydro J sesuai instruksi produk (jangan dipakai untuk merek/formulasi lain).
-#define DOSE_SEMAI_A_ML_PER_L      0.0f
-#define DOSE_SEMAI_B_ML_PER_L      0.0f
-#define DOSE_VEGETATIF_A_ML_PER_L  0.0f
-#define DOSE_VEGETATIF_B_ML_PER_L  0.0f
-#define DOSE_GENERATIF_A_ML_PER_L  0.0f
-#define DOSE_GENERATIF_B_ML_PER_L  0.0f
-#define FERTILIZER_DOSE_ENABLED 0 // tetap OFF sampai formulasi/dosis Hydro J dikonfirmasi
+#define DOSE_SEMAI_A_ML_PER_L      3.0f
+#define DOSE_SEMAI_B_ML_PER_L      3.0f
+#define DOSE_VEGETATIF_A_ML_PER_L  5.0f
+#define DOSE_VEGETATIF_B_ML_PER_L  5.0f
+#define DOSE_GENERATIF_A_ML_PER_L  7.0f
+#define DOSE_GENERATIF_B_ML_PER_L  7.0f
+#define FERTILIZER_DOSE_ENABLED 1 // Hydro J A/B aktif; verifikasi produk & stok sebelum dipakai
 #define IRRIG_SETTLE_MS      30000UL
 #define IRRIG_PHASE_TIMEOUT_MS 600000UL // 10 menit; 18 L pada rate nominal ≈517 s
 #define IRRIG_MAX_CYCLE_ML   18000.0f
