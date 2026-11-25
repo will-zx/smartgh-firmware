@@ -380,11 +380,8 @@ static void controlTask(void* arg) {
             Serial.println("[irigasi] irigasi otomatis DITAHAN: debit pompa & luas media belum dikalibrasi (IRRIG_AUTO_ENABLED=0) - manual tetap bisa");
         }
 
-        // Fail-safe: tanpa feedback sensor tidak ada regulate — aktuator dipatikan
-        // semuanya (override manual ikut, karena misting/irigasi tidak punya
-        // timeout sendiri) dan siklus irigasi yang berjalan dihentikan. Tanpa ini
-        // nilai fuzzy terakhir dibekukan selamanya, mis. DHT22 dicabut di tengah
-        // siklus -> misting/irigasi tetap nyala tanpa batas.
+        // Fail-safe otomatis: tanpa sensor valid, keputusan fuzzy tidak dipakai.
+        // Override manual tetap berlaku sampai kedaluwarsa (MANUAL_MAX_MS).
         bool mist = sensorData.valid && fuzzyOut.mistOn;
         // Keputusan irigasi fuzzy HANYA dipakai bila:
         //  - sensor DHT22 valid (butuh T/RH untuk ETc),
@@ -423,33 +420,20 @@ static void controlTask(void* arg) {
         // manual menimpanya. Ini yang dilaporkan sebagai fuzzy_* ke dashboard.
         bool fuzzyMist = mist, fuzzyBlower = blower, fuzzyIrigasi = irigasi;
 
-        // Override manual (tris-tata per aktuator) — manual tetap menang.
-        if (sensorData.valid) controlApply(&mist, &irigasi, &blower, &blowerLevel);
+        // Override manual tetap menang, termasuk saat sensor error.
+        controlApply(&mist, &irigasi, &blower, &blowerLevel);
         bool manual = controlIsManual();
         OverrideState ov = controlOverrides();
         setActuators(mist, blower, blowerLevel);
 
-        // Fertigasi empat pompa: sensor DHT22 mati = batalkan siklus
-        // (fail-safe penuh: tanpa T/RH tidak ada ETc/VPD yang sah, override
-        // manual pun tidak boleh mengecualikan device dari fail-safe ini);
-        // selain itu serah ke irrigationUpdate() yang memutuskan mulai/tidak
-        // siklus dari trigger + jeda minimum + anggaran harian.
-        // Sakelar manual yang dimatikan TIDAK lagi membatalkan siklus: override
-        // manual per aktuator, jadi mematikan sakelar berarti kembali ke fuzzy.
-        if (!sensorData.valid) {
-            irrigationAbort();
-        } else if (ov.irig == 0) {
-            // "Paksa mati" dari dashboard (mode off): siklus yang sedang
-            // berjalan harus benar-benar berhenti, bukan cuma dicegah memulai
-            // yang baru. Diperiksa TIAP iterasi supaya abort yang dikirim
-            // netTask tidak bisa dilanjutkan lagi oleh state machine di
-            // iterasi berikutnya.
+        // Irigasi: paksa mati selalu abort. Saat sensor error hanya override
+        // paksa nyala yang diteruskan; gate keamanan irrigationUpdate tetap
+        // berlaku (Tmean, volume, kapasitas, dosis, dan sinkronisasi waktu).
+        bool manualIrigOn = (ov.irig == 1);
+        if (ov.irig == 0 || (!sensorData.valid && !manualIrigOn)) {
             irrigationAbort();
         } else {
-            // manual = override operator memaksa irigasi nyala (ov.irig == 1).
-            // Perintah eksplisit itu boleh menembus jeda & anggaran harian,
-            // tapi hanya satu siklus untuk setiap perintah ON manual.
-            irrigationUpdate(irigasi, ov.irig == 1, controlIrrigationRequestId());
+            irrigationUpdate(irigasi, manualIrigOn, controlIrrigationRequestId());
         }
         bool irigasiRunning = irrigationRunning();
         IrrigStatus irig = irrigationStatus();
@@ -542,6 +526,8 @@ static void controlTask(void* arg) {
         if (!sensorData.soilValid) statusAdd(s.status, sizeof(s.status), " SOILERR");
         if (time(nullptr) < 100000) statusAdd(s.status, sizeof(s.status), " NOSYNC");
         if (!IRRIG_AUTO_ENABLED) statusAdd(s.status, sizeof(s.status), " IRIGOFF");
+        if (!sensorData.valid && !strstr(s.status, "Sensor Error"))
+            statusAdd(s.status, sizeof(s.status), " Sensor Error");
         // LCD ikut menampilkan penanda error (sekarang bisa, karena teksnya
         // bergeser; dulu kepotong di kolom 20).
         lcdScrollSetStatus(s.status);
@@ -552,7 +538,7 @@ static void controlTask(void* arg) {
         // phases every 20 ms so short dosing runs have bounded timing error.
         for (uint8_t tick = 1; tick < 2000 / IRRIG_CONTROL_TICK_MS; ++tick) {
             vTaskDelay(pdMS_TO_TICKS(IRRIG_CONTROL_TICK_MS));
-            if (!sensorData.valid || ov.irig == 0) irrigationAbort();
+            if (ov.irig == 0 || (!sensorData.valid && ov.irig != 1)) irrigationAbort();
             else irrigationUpdate(irigasi, ov.irig == 1, controlIrrigationRequestId());
             esp_task_wdt_reset();
         }

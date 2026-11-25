@@ -4,9 +4,12 @@
 
 `IDLE → FILL → DOSE_A → DOSE_B → SETTLE (30 s) → DIST → IDLE`.
 Only one pump is energized at a time. All four outputs are initialized OFF and
-the state machine aborts on invalid DHT22 data, a forced-off command, unsafe
-configuration, or the per-phase timeout. There is no level sensor, mixer, TDS,
-or flow-sensor dependency. Volume is estimated as calibrated `mL/s × seconds`.
+the state machine aborts automatic cycles on invalid DHT22 data, a forced-off
+command, unsafe configuration, or the per-phase timeout. A manual forced-on
+override is still accepted when DHT22 is invalid, but it must pass the same
+safety gates (time sync, Tmean, volume, capacity, and dose). There is no level
+sensor, mixer, TDS, or flow-sensor dependency. Volume is estimated as calibrated
+`mL/s × seconds`.
 Each pump phase is capped at 600 s, water per cycle at 18 L, each stock dose at
 500 mL, and final mixed volume at configured tank capacity. Current configured
 capacities: mixing tank 18,000 mL; stock A and B 6,216 mL each. These are

@@ -172,13 +172,14 @@ belum sah sampai data 24 jam penuh tersedia; proses fertigasi saat ini juga
 ditahan karena dosis A/B dinonaktifkan. Detail wiring, Kc, dan AB Mix
 ada di [`FERTIGATION.md`](FERTIGATION.md).
 
-**Fail-safe.** Bila sensor tidak valid, keputusan fuzzy untuk irigasi tidak
-dipakai dan siklus irigasi yang sedang berjalan dibatalkan. Override manual
-operator tetap berjalan karena itu perintah eksplisit — termasuk **paksa mati**,
-yang membatalkan siklus irigasi yang sedang berjalan, bukan hanya mencegah
-siklus baru. `controlTask` berlangganan Task WDT (diinisialisasi eksplisit,
-timeout 5 detik), sehingga I2C yang macet memicu reboot alih-alih membiarkan
-pompa menyala.
+**Fail-safe.** Bila sensor tidak valid, keputusan fuzzy dimatikan, tetapi
+override manual misting/blower/irigasi tetap berjalan sampai kedaluwarsa karena
+itu perintah eksplisit. Irigasi manual tetap melewati gate keamanan
+`irrigationUpdate` (sinkronisasi waktu, Tmean, volume, kapasitas, dan dosis).
+**Paksa mati** membatalkan siklus irigasi yang sedang berjalan, bukan hanya
+mencegah siklus baru. `controlTask` berlangganan Task WDT (diinisialisasi
+eksplisit, timeout 5 detik), sehingga I2C yang macet memicu reboot alih-alih
+membiarkan pompa menyala.
 
 **Pembagian task.** `controlTask` di core 1 menjalankan sensor, fuzzy, dan
 aktuator. `netTask` di core 0 menangani WiFi, token, push RTDB, dan poll
