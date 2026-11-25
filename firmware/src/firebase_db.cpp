@@ -79,10 +79,11 @@ static HTTPClient http;
 // Satu objek per perintah; device mengeksekusi yang paling lama lalu menandainya
 // selesai (lihat pollCommands()). Field:
 //
-//   action   string  mist | irigasi | blower | auto | restart |
+//   action   string  mist | irigasi | blower | set_blower_duty | auto | restart |
 //                    set_vpd | set_fase | set_durasi | fase_reset
 //   value    bool    KHUSUS aksi aktuator tanpa "mode": true = paksa nyala,
-//                    false = kembali ke fuzzy (perilaku lama, dipertahankan)
+//                    false = kembali ke fuzzy (perilaku lama, dipertahankan).
+//                    Untuk set_blower_duty: angka 0-100 (persen duty).
 //   mode     string  opsional, MENANG atas "value" bila keduanya ada:
 //                      "on"   = paksa nyala (ov = 1)
 //                      "off"  = paksa mati  (ov = 0)
@@ -95,6 +96,7 @@ static HTTPClient http;
 //     {"action":"blower","value":true}            -> paksa nyala (cara lama)
 //     {"action":"blower","mode":"on"}             -> sama, eksplisit
 //     {"action":"blower","mode":"off"}            -> blower dipaksa mati
+//     {"action":"set_blower_duty","value":50}     -> paksa blower pada duty 50%
 //     {"action":"mist","mode":"auto"}             -> misting ikut fuzzy lagi
 //     {"action":"irigasi","mode":"off"}           -> siklus dibatalkan + pompa mati
 //     {"action":"set_fase","value":"Generatif"}
@@ -528,6 +530,13 @@ void pollCommands() {
         // pemilik state irigasi; jangan mengubah state/GPIO dari netTask.
     } else if (strcmp(action, "blower") == 0) {
         applyActuator(C_BLOWER, mode, on);
+    } else if (strcmp(action, "set_blower_duty") == 0) {
+        float pct = value | -1.0f;
+        if (isnan(pct) || pct < 0.0f || pct > 100.0f) {
+            Serial.printf("[fb] set_blower_duty ditolak: %.1f%% (harus 0-100)\n", pct);
+        } else {
+            controlSetBlowerDuty(pct / 100.0f);
+        }
     } else if (strcmp(action, "set_vpd") == 0) {
         // value = VPD target (kPa). Contoh: {"action":"set_vpd","value":1.2}
         // Hanya rentang hortikultura yang diterima; target 10 kPa membuat

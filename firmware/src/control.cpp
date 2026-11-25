@@ -13,6 +13,7 @@
 // aktuator, jadi override yang baru saja di-set tidak langsung ikut kedaluwarsa.
 static SemaphoreHandle_t mux = nullptr;
 static int8_t      ovMist = -1, ovIrig = -1, ovBlower = -1;
+static float       ovBlowerDuty = -1.0f;
 static unsigned long tMist = 0, tIrig = 0, tBlower = 0;   // millis override aktif
 static uint32_t irrigationRequestId = 0;
 
@@ -33,7 +34,7 @@ static void expireManual() {
     } else if (ovIrig >= 0 && now - tIrig >= MANUAL_MAX_MS) {
         ovIrig = -1; tIrig = 0; nama = "irigasi";
     } else if (ovBlower >= 0 && now - tBlower >= MANUAL_MAX_MS) {
-        ovBlower = -1; tBlower = 0; nama = "blower";
+        ovBlower = -1; tBlower = 0; ovBlowerDuty = -1.0f; nama = "blower";
     } else {
         return;
     }
@@ -48,6 +49,7 @@ void controlInit() {
 void controlRelease() {
     lock();
     ovMist = ovIrig = ovBlower = -1;
+    ovBlowerDuty = -1.0f;
     tMist = tIrig = tBlower = 0;
     unlock();
     Serial.println("[ctl] auto: semua aktuator kembali ke kendali fuzzy");
@@ -67,11 +69,25 @@ void controlForce(uint8_t bit, int8_t mode) {
         ovIrig = mode; tIrig = stamp; nama = "irigasi";
         if (mode == 1) irrigationRequestId++;
     }
-    if (bit & C_BLOWER) { ovBlower = mode; tBlower = stamp; nama = "blower"; }
+    if (bit & C_BLOWER) {
+        ovBlower = mode; tBlower = stamp; nama = "blower";
+        ovBlowerDuty = (mode == 1) ? 1.0f : -1.0f;
+    }
     unlock();
     Serial.printf("[ctl] override %s -> %s\n", nama,
                   mode == 1 ? "paksa nyala"
                             : (mode == 0 ? "paksa mati" : "kembali ke fuzzy"));
+}
+
+void controlSetBlowerDuty(float duty) {
+    if (!(duty >= 0.0f)) duty = 0.0f;
+    if (duty > 1.0f) duty = 1.0f;
+    lock();
+    ovBlower = (duty > 0.0f) ? 1 : 0;
+    ovBlowerDuty = duty;
+    tBlower = millis();
+    unlock();
+    Serial.printf("[ctl] override blower -> duty %.0f%%\n", duty * 100);
 }
 
 void controlSet(uint8_t bit, bool on) {
@@ -87,7 +103,11 @@ void controlApply(bool* mist, bool* irigasi, bool* blower, float* blowerLevel) {
     if (ovIrig >= 0)   *irigasi = (ovIrig == 1);
     if (ovBlower >= 0) {
         *blower = (ovBlower == 1);
-        if (blowerLevel) *blowerLevel = (ovBlower == 1) ? 1.0f : 0.0f;
+        if (blowerLevel) {
+            *blowerLevel = (ovBlower == 1)
+                ? (ovBlowerDuty >= 0.0f ? ovBlowerDuty : 1.0f)
+                : 0.0f;
+        }
     }
     unlock();
 }

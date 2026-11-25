@@ -34,8 +34,11 @@ void controlSet(uint8_t bit, bool on);   // on = paksa nyala, off = kembali ke f
 // Mode 0 dan 1 sama-sama distempel waktu, jadi expireManual() mengembalikan
 // aktuator ke fuzzy setelah MANUAL_MAX_MS. Nilai di luar -1..1 dijepit.
 void controlForce(uint8_t bit, int8_t mode);
-// Terapkan override per aktuator. blowerLevel (opsional) = 1.0/0.0 bila
-// blower di-override.
+// Duty blower manual 0..1. 0 = paksa mati; >0 = paksa nyala pada duty itu.
+// Nilai di bawah BLOWER_MIN_DUTY tetap diterima dan dibulatkan oleh aktuator.
+void controlSetBlowerDuty(float duty);
+// Terapkan override per aktuator. blowerLevel (opsional) = duty override
+// blower, atau 1.0/0.0 bila blower dipaksa nyala/mati.
 void controlApply(bool* mist, bool* irigasi, bool* blower, float* blowerLevel = nullptr);
 bool controlIsManual();
 OverrideState controlOverrides();   // status override saat ini (untuk telemetri)
