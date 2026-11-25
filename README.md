@@ -173,7 +173,9 @@ tercampur.
 Volume dan durasi tiap tahap dihitung dari rate mL/s konfigurasi. Sebelum
 Tmean 24 jam tersedia, ETc memakai suhu terakhir yang valid sebagai fallback
 sementara (maksimal 5 menit sejak sampel terakhir); setelah itu dosis kembali 0
-sampai sensor pulih. Siklus fertigasi tetap harus lolos semua gate keamanan.
+sampai sensor pulih. Permintaan manual yang ditahan gate otomatis dilepas
+kembali ke AUTO agar tombol tidak tertinggal ON. Siklus fertigasi tetap harus
+lolos semua gate keamanan.
 Detail wiring, Kc, dan AB Mix ada di [`FERTIGATION.md`](FERTIGATION.md).
 
 **Fail-safe.** Bila sensor tidak valid, keputusan fuzzy dimatikan, tetapi

@@ -55,6 +55,14 @@ void controlRelease() {
     Serial.println("[ctl] auto: semua aktuator kembali ke kendali fuzzy");
 }
 
+void controlReleaseIrrigation() {
+    lock();
+    ovIrig = -1;
+    tIrig = 0;
+    unlock();
+    Serial.println("[ctl] irigasi kembali ke auto (permintaan manual ditahan)");
+}
+
 void controlForce(uint8_t bit, int8_t mode) {
     if (mode < -1) mode = -1;
     if (mode > 1)  mode = 1;

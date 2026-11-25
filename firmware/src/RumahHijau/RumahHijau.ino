@@ -437,6 +437,14 @@ static void controlTask(void* arg) {
         }
         bool irigasiRunning = irrigationRunning();
         IrrigStatus irig = irrigationStatus();
+        // Permintaan manual yang ditahan gate tidak boleh meninggalkan tombol ON:
+        // lepaskan override irigasi ini saja agar dashboard kembali ke AUTO.
+        if (manualIrigOn && !irigasiRunning && irig.holdReason && irig.holdReason[0]) {
+            controlReleaseIrrigation();
+            ov = controlOverrides();
+            manual = controlIsManual();
+            irig = irrigationStatus();
+        }
 
         // Nilai yang dilaporkan (serial, LCD, RTDB). Sensor yang tidak
         // terbaca dilaporkan NaN -> field-nya dibuang saat push (dashboard

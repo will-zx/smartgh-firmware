@@ -26,6 +26,7 @@ struct OverrideState {
 
 void controlInit();   // buat mutex — panggil sebelum task dibuat
 void controlRelease();// semua aktuator kembali ke kendali fuzzy
+void controlReleaseIrrigation(); // hanya irigasi kembali ke kendali fuzzy
 void controlSet(uint8_t bit, bool on);   // on = paksa nyala, off = kembali ke fuzzy
 // Mode override eksplisit. controlSet() saja tidak cukup untuk dashboard:
 // value:false berarti "kembali ke fuzzy", jadi aktuator yang dinyalakan fuzzy
